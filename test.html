@@ -1,0 +1,2088 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KeSai-Recode</title>
+<script src="https://unpkg.com/libphonenumber-js@1.12.6/bundle/libphonenumber-max.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three-spritetext@1.8.2/dist/three-spritetext.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  :root {
+    --bg: #050505; --surface: #0c0c0c; --surface2: #141414; --border: #282828;
+    --text: #f5f5f5; --muted: #777; --success: #22c55e; --error: #ef4444; --warn: #eab308;
+    --accent: #3b82f6; --graph-bg: #0b0b0c; --graph-dot: rgba(255,255,255,.05);
+    --ease: cubic-bezier(.22,1,.36,1);
+  }
+  html { scroll-behavior: smooth; }
+  body { min-height: 100vh; background: var(--bg); color: var(--text); overflow-x: hidden; }
+
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(59,130,246,.08), transparent 45%),
+      radial-gradient(circle at 85% 90%, rgba(168,85,247,.06), transparent 45%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.015), transparent 70%);
+    animation: bgShift 24s ease-in-out infinite alternate;
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .025;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @keyframes bgShift { to { transform: translate(2%, -1%) scale(1.05); } }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 22px; background: rgba(5,5,5,.78); border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%);
+    animation: slideDown .6s var(--ease) both;
+  }
+  @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } }
+  .brand {
+    color: var(--text); font-size: .82rem; letter-spacing: .22em; font-weight: 800;
+    text-decoration: none; cursor: pointer; user-select: none;
+    transition: letter-spacing .4s var(--ease), color .3s;
+  }
+  .brand:hover { letter-spacing: .32em; }
+  .brand span { color: var(--muted); font-weight: 500; letter-spacing: .08em; transition: color .3s; }
+  .brand:hover span { color: var(--text); }
+
+  .menu-toggle {
+    width: 42px; height: 42px; padding: 10px; display: flex; flex-direction: column; justify-content: center; gap: 5px;
+    background: transparent; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    transition: background .25s, border-color .25s, transform .2s var(--ease);
+  }
+  .menu-toggle:hover { background: rgba(255,255,255,.06); border-color: #444; }
+  .menu-toggle:active { transform: scale(.94); }
+  .menu-toggle span {
+    display: block; height: 1px; width: 20px; background: #eee; margin: 0 auto;
+    transition: transform .35s var(--ease), width .35s var(--ease), opacity .25s;
+  }
+  .menu-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  .menu-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; width: 0; }
+  .menu-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  .tabs {
+    position: absolute; top: 68px; right: 16px; width: min(280px, calc(100vw - 32px)); padding: 8px;
+    display: flex; flex-direction: column; gap: 3px;
+    background: rgba(13,13,13,.96); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.7);
+    opacity: 0; transform: translateY(-10px) scale(.97); pointer-events: none;
+    transition: opacity .28s var(--ease), transform .28s var(--ease);
+    backdrop-filter: blur(20px);
+  }
+  .tabs.menu-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .tab {
+    width: 100%; display: flex; align-items: center; gap: 10px; justify-content: flex-start; text-align: left;
+    padding: 12px 14px; border: 0; border-radius: 7px; background: transparent; color: #aaa;
+    font-size: .82rem; font-weight: 600; cursor: pointer;
+    transition: background .2s, color .2s, transform .15s var(--ease), padding-left .25s var(--ease);
+  }
+  .tab svg { width: 15px; height: 15px; flex: 0 0 15px; transition: transform .3s var(--ease); }
+  .tab:hover { background: rgba(255,255,255,.06); color: #eee; padding-left: 18px; }
+  .tab:hover svg { transform: scale(1.15); }
+  .tab.active { background: var(--text); color: var(--bg); }
+  .tab.active svg { transform: scale(1.1); }
+
+  .welcome {
+    min-height: calc(100vh - 70px); padding: 24px; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center; position: relative;
+  }
+  .welcome-mark {
+    color: #555; font-size: .7rem; letter-spacing: .4em; margin-bottom: 28px;
+    animation: fadeUp .9s var(--ease) both;
+  }
+  .welcome h1 {
+    font-size: clamp(2rem, 8vw, 4.8rem); letter-spacing: -.065em; line-height: 1.05;
+    margin: 0; font-weight: 800;
+    animation: fadeUp .9s .1s var(--ease) both;
+  }
+  .welcome h1 span {
+    color: #777; display: inline-block;
+    background: linear-gradient(90deg, #777 0%, #ccc 50%, #777 100%);
+    background-size: 200% auto; -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shine 4s linear infinite;
+  }
+  @keyframes shine { to { background-position: 200% center; } }
+  .welcome p { margin-top: 18px; color: #777; font-size: .82rem; letter-spacing: .06em; animation: fadeUp .9s .2s var(--ease) both; }
+  .welcome .enter-hint {
+    margin-top: 42px; color: #555; font-size: .68rem; letter-spacing: .18em; text-transform: uppercase;
+    animation: fadeUp .9s .3s var(--ease) both, pulse 2.4s 1.2s ease-in-out infinite;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } }
+  @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+  .workspace { display: none; width: min(900px, 100%); margin: 0 auto; padding: 36px 20px 60px; }
+  .workspace.show { display: block; animation: fadeUp .5s var(--ease) both; }
+
+  .section-heading { margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #252525; }
+  .section-heading h2 { font-size: 1.45rem; letter-spacing: -.04em; margin-bottom: 7px; }
+  .section-heading p { color: #777; font-size: .78rem; }
+  .workspace.show .section-heading { animation: fadeUp .55s var(--ease) both; }
+
+  .input-group { display: flex; gap: 8px; align-items: stretch; margin-bottom: 15px; position: relative; }
+  .input-group input { flex: 1; min-width: 0; min-height: 46px; padding: 12px 14px; border-radius: 6px;
+    border: 1px solid #303030; background: #0a0a0a; color: var(--text); font-size: .85rem; outline: none;
+    transition: border-color .25s, box-shadow .25s, background .25s; }
+  .input-group input:focus { border-color: #888; background: #0d0d0d; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+  .input-group input::placeholder { color: #555; }
+  .input-group button:not(.clear-btn) {
+    flex: 0 0 auto; min-height: 46px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; border: none; border-radius: 6px; background: var(--text); color: var(--bg);
+    font-weight: 700; font-size: .8rem; cursor: pointer; white-space: nowrap;
+    transition: transform .18s var(--ease), box-shadow .25s, opacity .2s, background .25s;
+  }
+  .input-group button:not(.clear-btn):hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,255,255,.14); }
+  .input-group button:not(.clear-btn):active:not(:disabled) { transform: translateY(0) scale(.97); }
+  .input-group button:not(.clear-btn):disabled { opacity: .4; cursor: not-allowed; }
+  .input-group button:not(.clear-btn) svg { width: 16px; height: 16px; flex: 0 0 16px; }
+
+  .clear-btn {
+    position: absolute; right: 58px; top: 50%; transform: translateY(-50%);
+    width: 22px; height: 22px; border-radius: 50%;
+    border: none; background: #2a2a2a; color: #888;
+    font-size: 14px; line-height: 1; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    transition: background .2s, color .2s;
+  }
+  .clear-btn:hover { background: #3a3a3a; color: #fff; }
+  .input-group.has-value .clear-btn { display: flex; }
+
+  .result { margin-top: 15px; display: none; }
+  .result.show { display: block; animation: fadeUp .4s var(--ease) both; }
+
+  .status { text-align: center; padding: 12px; border-radius: 6px; font-weight: 600; font-size: .8rem;
+    margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;
+    animation: fadeUp .35s var(--ease) both; }
+  .status svg { width: 14px; height: 14px; }
+  .status.valid { background: rgba(34,197,94,.1); color: var(--success); border: 1px solid rgba(34,197,94,.3); }
+  .status.invalid { background: rgba(239,68,68,.1); color: var(--error); border: 1px solid rgba(239,68,68,.3); }
+  .status.loading { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+  .card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px;
+    animation: fadeUp .45s var(--ease) both; transition: border-color .25s; }
+  .card:hover { border-color: #3a3a3a; }
+  .card-title { font-size: .7rem; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 5px; letter-spacing: .06em; }
+
+  .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);
+    gap: 10px; align-items: center; animation: fadeUp .35s var(--ease) both; }
+  .row:last-child { border-bottom: none; }
+  .card .row:nth-child(1) { animation-delay: .02s; }
+  .card .row:nth-child(2) { animation-delay: .06s; }
+  .card .row:nth-child(3) { animation-delay: .1s; }
+  .card .row:nth-child(4) { animation-delay: .14s; }
+  .card .row:nth-child(5) { animation-delay: .18s; }
+  .card .row:nth-child(6) { animation-delay: .22s; }
+  .card .row:nth-child(7) { animation-delay: .26s; }
+  .card .row:nth-child(8) { animation-delay: .3s; }
+  .label { color: var(--muted); font-weight: 600; font-size: .75rem; flex-shrink: 0; }
+  .value { color: var(--text); text-align: right; word-break: break-all; font-size: .8rem;
+    display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+  .value svg { width: 12px; height: 12px; }
+  .value.ok { color: var(--success); }
+  .value.no { color: var(--error); }
+  .value.warn { color: var(--warn); }
+
+  #ipMap, #domainMap {
+    height: 0; border-radius: 8px; overflow: hidden; margin-bottom: 0; border: 1px solid transparent;
+    opacity: 0; transition: height .5s var(--ease), opacity .4s, margin .5s var(--ease), border-color .4s;
+  }
+  #ipMap.map-visible, #domainMap.map-visible {
+    height: 300px; margin-bottom: 16px; border-color: var(--border); opacity: 1;
+  }
+
+  .terminal-wrapper {
+    margin-top: 15px; opacity: 0; max-height: 0; overflow: hidden;
+    transition: opacity .4s, max-height .5s var(--ease);
+  }
+  .terminal-wrapper.show { opacity: 1; max-height: 400px; }
+  .terminal {
+    background: #000; color: #0f0; font-family: 'Courier New', monospace; font-size: .75rem;
+    padding: 12px; border-radius: 6px; border: 1px solid #1a1a1a; line-height: 1.45;
+    max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    box-shadow: inset 0 0 18px rgba(0,255,0,.06);
+    transition: box-shadow .6s;
+  }
+  .terminal.show-glow { box-shadow: inset 0 0 18px rgba(0,255,0,.12), 0 0 30px rgba(0,255,0,.08); }
+  .terminal::before { content: '> root@osint:~# '; color: #0f0; }
+  .terminal::-webkit-scrollbar { width: 6px; }
+  .terminal::-webkit-scrollbar-thumb { background: #0f0; border-radius: 3px; }
+
+  .graph-wrapper {
+    margin-top: 15px; opacity: 0; max-height: 0; overflow: hidden;
+    transition: opacity .4s, max-height .5s var(--ease);
+  }
+  .graph-wrapper.show { opacity: 1; max-height: 460px; }
+  #network { height: 420px; background: var(--graph-bg); border-radius: 8px; border: 1px solid var(--border); }
+
+  .export-wrapper {
+    margin-top: 15px; display: flex; gap: 8px; flex-wrap: wrap;
+    opacity: 0; transform: translateY(10px); pointer-events: none;
+    transition: opacity .4s var(--ease), transform .4s var(--ease);
+  }
+  .export-wrapper.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .export-btn {
+    flex: 1; min-width: 90px; padding: 11px; font-size: .75rem; font-weight: 600; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: #0b0b0b; color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    transition: background .2s, border-color .2s, transform .15s var(--ease), box-shadow .25s;
+  }
+  .export-btn:hover { background: #1a1a1a; border-color: #444; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+  .export-btn:active { transform: translateY(0) scale(.97); }
+
+  .skeleton {
+    background: linear-gradient(90deg, #141414 25%, #1f1f1f 50%, #141414 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite linear;
+    border-radius: 6px;
+    height: 14px;
+    margin: 8px 0;
+  }
+  .skeleton.w60 { width: 60%; }
+  .skeleton.w80 { width: 80%; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  .history {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px;
+    min-height: 0;
+  }
+  .history:empty { display: none; }
+  .chip {
+    padding: 6px 12px; font-size: .72rem; font-weight: 600;
+    background: #0b0b0b; color: #aaa; border: 1px solid #2a2a2a;
+    border-radius: 999px; cursor: pointer; user-select: none;
+    transition: background .2s, color .2s, border-color .2s, transform .15s var(--ease);
+    animation: fadeUp .3s var(--ease) both;
+  }
+  .chip:hover { background: #1a1a1a; color: #fff; border-color: #444; transform: translateY(-1px); }
+  .chip:active { transform: translateY(0) scale(.96); }
+
+  .copyable { cursor: pointer; position: relative; transition: color .2s; }
+  .copyable:hover { color: #fff; }
+  .copyable:hover::after { content: '⧉'; position: absolute; right: -16px; opacity: .5; font-size: .7rem; }
+
+  .report-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .report-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .report-field.full { grid-column: 1 / -1; }
+  .report-field label { color: #aaa; font-size: .75rem; }
+  .report-field input, .report-field textarea, .report-field select {
+    width: 100%; border: 1px solid #303030; background: #0a0a0a; color: var(--text);
+    border-radius: 6px; padding: 12px; font: inherit; font-size: .85rem; outline: none;
+    transition: border-color .25s, box-shadow .25s, background .25s;
+  }
+  .report-field input:focus, .report-field textarea:focus, .report-field select:focus {
+    border-color: #888; background: #0d0d0d; box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+  }
+  .report-field textarea { min-height: 94px; resize: vertical; line-height: 1.55; }
+  .report-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .report-actions button {
+    min-height: 44px; padding: 10px 16px; border-radius: 6px; border: none;
+    background: var(--text); color: var(--bg); font-weight: 700; font-size: .8rem; cursor: pointer;
+    transition: transform .18s var(--ease), box-shadow .25s, background .25s, opacity .2s;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .report-actions button:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(255,255,255,.12); }
+  .report-actions button:active { transform: translateY(0) scale(.97); }
+  .secondary-btn { background: #0b0b0b !important; color: #eee !important; border: 1px solid #303030 !important; }
+  .secondary-btn:hover { background: #1a1a1a !important; border-color: #444 !important; }
+  .report-output {
+    width: 100%; min-height: 320px; margin-top: 18px; padding: 16px; border: 1px solid #303030;
+    background: #080808; color: #eee; border-radius: 6px;
+    font: .88rem/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; white-space: pre-wrap;
+    transition: border-color .25s, box-shadow .25s;
+  }
+  .report-output:focus { outline: none; border-color: #888; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+  .report-note { color: #666; font-size: .72rem; line-height: 1.5; margin-top: 12px; }
+
+  .footer { padding: 20px; margin: 0; border-top: 1px solid #202020; letter-spacing: .06em;
+    color: var(--muted); font-size: .7rem; text-align: center; }
+
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--text);
+    border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120%);
+    padding: 12px 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+    color: #fff; font-size: .8rem; font-weight: 600; z-index: 2000;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6); opacity: 0;
+    transition: transform .4s var(--ease), opacity .4s;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  }
+
+  @media (max-width: 600px) {
+    .topbar { padding: 14px 16px; }
+    .workspace { padding: 26px 14px 42px; }
+    .input-group { flex-direction: column; }
+    .input-group button:not(.clear-btn) { width: 100%; }
+    .clear-btn { right: 14px; top: 14px; transform: none; }
+    .row { align-items: flex-start; }
+    .value { max-width: 62%; }
+    .report-form { grid-template-columns: 1fr; }
+    .report-field.full { grid-column: auto; }
+  }
+
+  /* ================= БЛОКИ ВЫДАЧИ (SMTP / PhoneInfoga / Остальное) ================= */
+  :root { --c-smtp: #60a5fa; --c-phone: #4ade80; --c-other: #c084fc; }
+  .report { display: flex; flex-direction: column; gap: 14px; }
+  .rblock {
+    --accent-b: var(--accent);
+    background: var(--surface2); border: 1px solid var(--border); border-left: 4px solid var(--accent-b);
+    border-radius: 12px; padding: 16px 18px; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .rblock-smtp { --accent-b: var(--c-smtp); }
+  .rblock-phone { --accent-b: var(--c-phone); }
+  .rblock-other { --accent-b: var(--c-other); }
+  .rblock-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; break-after: avoid; }
+  .rblock-ico {
+    flex: 0 0 36px; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+    background: rgba(255,255,255,.06); color: var(--accent-b);
+    background: color-mix(in srgb, var(--accent-b) 16%, transparent);
+  }
+  .rblock-ico svg { width: 18px; height: 18px; }
+  .rblock-eyebrow { font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+  .rblock-head h3 { font-size: 1.02rem; letter-spacing: -.02em; line-height: 1.2; }
+  .rblock-head h3 small { font-size: .78rem; color: var(--muted); font-weight: 600; letter-spacing: 0; margin-left: 4px; }
+  .rblock .card { margin-bottom: 0; background: transparent; animation: none; }
+  .rblock .status { margin-bottom: 10px; animation: none; }
+
+  .empty {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 12px;
+    border: 1px dashed var(--border); border-radius: 10px; color: var(--muted);
+    font-size: .82rem; font-weight: 600; text-align: center; margin-top: 10px;
+  }
+  .rblock-body > .empty:first-child { margin-top: 0; }
+  .empty svg { width: 20px; height: 20px; opacity: .7; }
+  .empty small { font-size: .72rem; font-weight: 500; opacity: .85; }
+
+  .finding-list { display: grid; gap: 8px; margin-top: 10px; }
+  .finding-list:first-child { margin-top: 0; }
+  .finding {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--surface); color: inherit; text-decoration: none;
+    break-inside: avoid; page-break-inside: avoid;
+    transition: border-color .2s, transform .15s var(--ease), box-shadow .25s;
+  }
+  .finding:hover { border-color: var(--accent-b); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,.3); }
+  .finding:focus-visible { outline: 2px solid var(--accent-b); outline-offset: 2px; }
+  .site-badge {
+    flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 800; font-size: .85rem; color: #fff; background: hsl(var(--h, 210) 62% 42%);
+  }
+  .finding-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .finding-title { font-weight: 700; font-size: .86rem; overflow-wrap: anywhere; }
+  .finding-url { font-size: .72rem; color: var(--muted); overflow-wrap: anywhere; word-break: break-word; }
+  .src-pill {
+    font-size: .66rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+  }
+  .finding-go { flex: 0 0 16px; width: 16px; height: 16px; color: var(--muted); }
+
+  .svc-notes { list-style: none; display: grid; gap: 6px; margin-top: 10px; }
+  .svc-notes:first-child { margin-top: 0; }
+  .svc-notes li { font-size: .75rem; line-height: 1.4; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); color: var(--muted); }
+  .svc-notes li b { color: var(--text); }
+  .svc-notes li.err { color: var(--error); border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.07); }
+  .svc-notes li.err b { color: inherit; }
+  .svc-notes li.warn { color: var(--warn); border-color: rgba(234,179,8,.35); background: rgba(234,179,8,.07); }
+  .svc-notes li.warn b { color: inherit; }
+
+  .field-sub { margin: -4px 0 15px; }
+  .field-sub input {
+    width: 100%; min-height: 42px; padding: 10px 14px; border-radius: 6px; border: 1px solid #303030;
+    background: #0a0a0a; color: var(--text); font-size: .8rem; outline: none;
+    transition: border-color .25s, box-shadow .25s;
+  }
+  .field-sub input:focus { border-color: #888; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+  .field-sub input::placeholder { color: #555; }
+
+  .svc-settings { margin: 0 0 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); padding: 10px 14px; }
+  .svc-settings summary { cursor: pointer; font-size: .75rem; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+  .svc-settings .svc-field { display: grid; gap: 4px; margin-top: 10px; }
+  .svc-settings label { font-size: .72rem; font-weight: 700; color: var(--text); }
+  .svc-settings input {
+    width: 100%; padding: 9px 12px; border-radius: 6px; border: 1px solid #303030; background: #0a0a0a;
+    color: var(--text); font-size: .76rem; outline: none;
+  }
+  .svc-settings input:focus { border-color: #888; }
+  .svc-settings p { margin-top: 10px; font-size: .7rem; line-height: 1.5; color: var(--muted); }
+  .svc-settings code { font-family: 'Courier New', monospace; color: var(--text); }
+
+  /* цепочка связей: видна только в PDF/при печати */
+  .chain-block { display: none; margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
+  .chain-block h3 { font-size: .9rem; margin-bottom: 8px; }
+  .chain-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px dashed var(--border); break-inside: avoid; page-break-inside: avoid; }
+  .chain-row:last-child { border-bottom: 0; }
+  .chain-node {
+    display: inline-flex; flex-direction: column; max-width: 100%; padding: 5px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); font-size: .78rem; font-weight: 600;
+    color: var(--text); text-decoration: none; overflow-wrap: anywhere; word-break: break-word;
+  }
+  .chain-node small { font-size: .58rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+  .chain-node.is-first { border-color: var(--c-smtp); }
+  .chain-node.is-site { border-color: var(--c-other); }
+  .chain-arrow { flex: 0 0 16px; width: 16px; height: 16px; color: var(--muted); }
+  .chain-more { font-size: .72rem; color: var(--muted); margin-top: 6px; }
+
+  .print-head { display: none; }
+
+  @media (max-width: 600px) {
+    .rblock { padding: 14px; }
+    .finding { flex-wrap: wrap; }
+    .finding-main { flex-basis: calc(100% - 60px); }
+  }
+
+  #network3d { height: 420px; background: var(--graph-bg) radial-gradient(var(--graph-dot) 1px, transparent 1px) 0 0 / 22px 22px; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; display: none; }
+  .graph-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .graph-legend { font-size: .7rem; color: var(--muted); display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+  .graph-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 6px; }
+
+  /* ===== настройки темы ===== */
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 14px; }
+  .theme-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; font-size: .78rem; font-weight: 600; }
+  .theme-row input[type=color] { width: 40px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; transition: transform .2s var(--ease), border-color .2s; }
+  .swatch:hover { transform: scale(1.12); border-color: #888; }
+  .theme-warn { margin-top: 12px; font-size: .74rem; color: var(--warn); display: none; line-height: 1.5; }
+  .theme-preview { margin-top: 14px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 14px var(--accent), 0 0 30px var(--accent); }
+
+  .graph-btns { display: inline-flex; gap: 8px; }
+  .graph-wrapper.graph-full {
+    position: fixed; inset: 0; z-index: 3000; margin: 0; max-height: none !important; opacity: 1;
+    display: flex; flex-direction: column; padding: 12px 14px; background: var(--graph-bg); overflow: hidden;
+  }
+  .graph-wrapper.graph-full .graph-toolbar { flex: 0 0 auto; }
+  .graph-wrapper.graph-full #network3d, .graph-wrapper.graph-full #network { flex: 1 1 auto; height: auto !important; min-height: 0; border-radius: 8px; }
+  body.graph-fs-lock { overflow: hidden; }
+  .graph-mode-btn { flex: 0 0 auto; min-width: 0; padding: 7px 12px; }
+
+  /* сворачиваемые списки найденных профилей */
+  .fold { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-top: 10px; overflow: hidden; }
+  .fold:first-child { margin-top: 0; }
+  .fold summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 11px 14px; user-select: none; }
+  .fold summary::-webkit-details-marker { display: none; }
+  .fold summary:hover { background: rgba(255,255,255,.04); }
+  .fold summary:focus-visible { outline: 2px solid var(--accent-b); outline-offset: -2px; }
+  .fold-arrow { width: 0; height: 0; border-style: solid; border-width: 5px 0 5px 8px; border-color: transparent transparent transparent var(--accent-b); transition: transform .2s var(--ease); flex: 0 0 auto; }
+  .fold[open] > summary .fold-arrow { transform: rotate(90deg); }
+  .fold-title { font-weight: 700; font-size: .86rem; }
+  .fold-count { margin-left: auto; font-size: .72rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--text); }
+  .fold-body { padding: 4px 12px 12px; border-top: 1px solid var(--border); }
+  .fold-filter {
+    width: 100%; margin: 8px 0 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid #303030;
+    background: #0a0a0a; color: var(--text); font-size: .76rem; outline: none;
+  }
+  .fold-filter:focus { border-color: #888; }
+  .fold .finding-list { max-height: 360px; overflow-y: auto; padding-right: 2px; }
+  .fold .finding { padding: 7px 10px; gap: 10px; }
+  .fold .site-badge { flex: 0 0 26px; width: 26px; height: 26px; font-size: .72rem; }
+  .fold .finding-title { font-size: .8rem; }
+
+  /* ================= ПЕЧАТЬ / PDF (A4) ================= */
+  @page { size: A4; margin: 14mm 12mm; }
+  @media print {
+    :root {
+      --bg: #fff; --surface: #fff; --surface2: #fff; --border: #d6dbe3; --text: #111827; --muted: #556070;
+      --success: #15803d; --error: #b91c1c; --warn: #a16207; --accent: #2563eb;
+      --c-smtp: #2563eb; --c-phone: #16a34a; --c-other: #9333ea;
+    }
+    html, body { background: #fff !important; color: #111827 !important; min-height: 0 !important; overflow: visible !important; }
+    body::before, body::after { display: none !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; animation: none !important; transition: none !important; }
+
+    /* всё лишнее: меню, формы поиска, кнопки экспорта, граф, терминал */
+    .topbar, .tabs, .welcome, .no-print, [data-html2pdf-ignore], .input-group, .field-sub, .svc-settings, .history,
+    .export-wrapper, .graph-wrapper, .terminal-wrapper, .report-actions, .clear-btn, .toast { display: none !important; }
+
+    .workspace.show { display: block !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
+    .section-heading { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .section-heading p { display: none; }
+
+    .print-head { display: flex !important; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding-bottom: 8px;
+      border-bottom: 2px solid #111827; font-size: 9pt; color: var(--muted); }
+    .print-head b { color: #111827; letter-spacing: .08em; }
+
+    .result { margin-top: 8px; }
+    .report { gap: 10px; }
+    .rblock, .finding, .card, .chain-row, .empty { break-inside: avoid; page-break-inside: avoid; }
+    .rblock { box-shadow: 0 1px 3px rgba(0,0,0,.14); padding: 12px 14px; }
+    .rblock-head { margin-bottom: 8px; }
+    .finding { box-shadow: none; }
+    .finding-go { display: none; }
+    .rblock .value, .rblock .label { font-size: 9pt; }
+    a { color: inherit; text-decoration: none; }
+    .finding-url { color: #1d4ed8; }
+
+    .chain-block.has-chain { display: block !important; box-shadow: 0 1px 3px rgba(0,0,0,.14); break-inside: auto; margin-top: 10px; }
+    .chain-block h3 { break-after: avoid; }
+    .svc-notes li { break-inside: avoid; }
+    .fold-filter, .fold-arrow { display: none !important; }
+    .fold { break-inside: auto; }
+    .fold summary { padding: 8px 12px; }
+    .fold .finding-list { max-height: none !important; overflow: visible !important; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" id="homeBrand">KeSai</div> <span>OSINT</span></div>
+  <button class="menu-toggle" id="menuToggle" aria-label="Открыть меню" aria-expanded="false"><span></span><span></span><span></span></button>
+  <nav class="tabs" id="mainMenu" aria-label="Разделы">
+    <button class="tab active" data-tab="domain">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Домен
+    </button>
+    <button class="tab" data-tab="ip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      IP
+    </button>
+    <button class="tab" data-tab="email">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      Почта
+    </button>
+    <button class="tab" data-tab="phone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      Телефон
+    </button>
+    <button class="tab" data-tab="reports">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg>
+      Отчёты
+    </button>
+    <button class="tab" data-tab="dossier">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      Досье
+    </button>
+    <button class="tab" data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Настройки
+    </button>
+  </nav>
+</header>
+
+<div class="container">
+  <section class="welcome" id="welcomeScreen">
+    <div class="welcome-mark">KeSai / INTELLIGENCE</div>
+    <h1>Приветствуем<br><span>KeSai.</span></h1>
+    <p>Минималистичная рабочая среда для анализа открытых данных.</p>
+    <div class="enter-hint">Откройте меню, чтобы начать поиск</div>
+  </section>
+
+  <main class="workspace" id="workspace">
+    <div class="print-head" id="printHead" aria-hidden="true"></div>
+    <div class="section-heading"><h2 id="sectionTitle">Домен</h2><p id="sectionDescription">Анализ доменной информации из открытых источников.</p></div>
+
+    <div id="panel-domain" style="display:none;">
+      <div class="history" id="domainHistory"></div>
+      <div class="input-group" id="domainGroup">
+        <input type="text" id="domainInput" placeholder="example.com" autocomplete="off" spellcheck="false">
+        <button class="clear-btn" id="domainClear" type="button" aria-label="Очистить">×</button>
+        <button id="domainBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Поиск</button>
+      </div>
+      <div id="domainMap"></div>
+      <div class="result" id="domainResult"></div>
+    </div>
+
+    <div id="panel-ip" style="display:none;">
+      <div class="history" id="ipHistory"></div>
+      <div class="input-group" id="ipGroup">
+        <input type="text" id="ipInput" placeholder="8.8.8.8" autocomplete="off" spellcheck="false">
+        <button class="clear-btn" id="ipClear" type="button" aria-label="Очистить">×</button>
+        <button id="ipBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Поиск</button>
+      </div>
+      <div id="ipMap"></div>
+      <div class="result" id="ipResult"></div>
+    </div>
+
+    <div id="panel-email" style="display:none;">
+      <div class="history" id="emailHistory"></div>
+      <div class="input-group" id="emailGroup">
+        <input type="email" id="emailInput" placeholder="test@gmail.com" autocomplete="off" inputmode="email" spellcheck="false">
+        <button class="clear-btn" id="emailClear" type="button" aria-label="Очистить">×</button>
+        <button id="emailBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Проверить</button>
+      </div>
+      <div class="field-sub no-print"><input type="tel" id="emailPhoneInput" placeholder="Телефон для PhoneInfoga (необязательно): +7 999 123-45-67" autocomplete="off" inputmode="tel" aria-label="Телефон для PhoneInfoga"></div>
+      <div class="svc-slot no-print"></div>
+      <div class="result" id="emailResult"></div>
+    </div>
+
+    <div id="panel-phone" style="display:none;">
+      <p style="color:#999;font-size:.82rem;line-height:1.6;margin:0 0 14px;">
+        Проверка формата, страны, оператора и региона. Всё считается локально в браузере — номер никуда не отправляется.
+      </p>
+      <div class="history" id="phoneHistory"></div>
+      <div class="input-group" id="phoneGroup">
+        <input type="tel" id="phoneInput" placeholder="+7 999 123-45-67" autocomplete="off" inputmode="tel">
+        <button class="clear-btn" id="phoneClear" type="button" aria-label="Очистить">×</button>
+        <button id="phoneBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Анализ</button>
+      </div>
+      <div class="svc-slot no-print"></div>
+      <div class="result" id="phoneResult"></div>
+      <div class="report-actions" id="phoneActions" style="display:none;">
+        <button id="copyPhoneBtn" type="button" class="secondary-btn">Копировать результат</button>
+        <button id="downloadPhoneBtn" type="button" class="secondary-btn">Скачать TXT</button>
+      </div>
+    </div>
+
+    <div id="panel-reports" style="display:none;">
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Конструктор OSINT-отчётов</div>
+        <p style="color:#999;font-size:.82rem;line-height:1.6;">Заполни факты и источники — KeSai-Recode соберёт из них связный черновик отчёта. Текст можно отредактировать перед сохранением.</p>
+      </div>
+      <div class="report-form">
+        <div class="report-field"><label for="reportTitle">Название отчёта</label><input id="reportTitle" placeholder="Например, Проверка домена example.com"></div>
+        <div class="report-field"><label for="reportTarget">Объект анализа</label><input id="reportTarget" placeholder="Домен, IP, адрес почты или другое"></div>
+        <div class="report-field"><label for="reportDate">Дата проверки</label><input id="reportDate" type="date"></div>
+        <div class="report-field"><label for="reportTone">Стиль изложения</label><select id="reportTone"><option value="neutral">Нейтральный и понятный</option><option value="formal">Формальный</option><option value="brief">Краткий</option></select></div>
+        <div class="report-field full"><label for="reportGoal">Цель проверки</label><textarea id="reportGoal" placeholder="Что нужно было выяснить и почему?"></textarea></div>
+        <div class="report-field full"><label for="reportFindings">Установленные факты</label><textarea id="reportFindings" placeholder="Вноси только проверенные сведения. Один факт — с новой строки."></textarea></div>
+        <div class="report-field full"><label for="reportSources">Источники и ссылки</label><textarea id="reportSources" placeholder="URL страниц, RDAP, DNS, публичные реестры и т. д."></textarea></div>
+        <div class="report-field full"><label for="reportLimits">Ограничения и оговорки</label><textarea id="reportLimits" placeholder="Что не удалось проверить, где данные могут быть неполными."></textarea></div>
+      </div>
+      <div class="report-actions">
+        <button id="generateReportBtn" type="button">Составить отчёт</button>
+        <button id="copyReportBtn" type="button" class="secondary-btn">Копировать текст</button>
+        <button id="downloadReportBtn" type="button" class="secondary-btn">Скачать TXT</button>
+      </div>
+      <textarea id="reportOutput" class="report-output" aria-label="Сгенерированный отчёт" placeholder="Здесь появится черновик отчёта. После генерации его можно свободно редактировать."></textarea>
+      <p class="report-note">Важно: генератор работает прямо в браузере по шаблонам и введённым данным; он не подключён к ИИ и не подтверждает факты автоматически. Перед публикацией проверь каждое утверждение и не включай личные данные без законного основания.</p>
+    </div>
+
+    <div id="panel-dossier" style="display:none;">
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-title">Конструктор OSINT-досье</div>
+        <p style="color:#999;font-size:.82rem;line-height:1.6;">Вставь собранные сведения и источники. KeSai-Recode оформит их в выбранный тип досье, отделит подтверждённые факты от оценок и отметит пробелы. Генератор не ищет новые данные и не подтверждает их автоматически.</p>
+      </div>
+      <div class="report-form">
+        <div class="report-field"><label for="dossierType">Тип досье</label><select id="dossierType"><option value="info">1. Информационное досье</option><option value="operational">2. Оперативное досье</option><option value="intel">3. Разведывательное досье</option></select></div>
+        <div class="report-field"><label for="dossierDate">Дата составления</label><input id="dossierDate" type="date"></div>
+        <div class="report-field"><label for="dossierTitle">Название досье</label><input id="dossierTitle" placeholder="Например, Досье по объекту исследования"></div>
+        <div class="report-field"><label for="dossierSubject">Объект / тема</label><input id="dossierSubject" placeholder="Организация, домен, событие, тема"></div>
+        <div class="report-field full"><label for="dossierPurpose">Цель и контекст</label><textarea id="dossierPurpose" placeholder="Что нужно понять и в каком контексте рассматривается объект?"></textarea></div>
+        <div class="report-field full"><label for="dossierFacts">Предоставленная информация</label><textarea id="dossierFacts" placeholder="Вставь текст, заметки, даты, связи и факты. Один пункт — с новой строки."></textarea></div>
+        <div class="report-field full"><label for="dossierSources">Источники</label><textarea id="dossierSources" placeholder="Ссылки, названия публикаций, даты получения информации"></textarea></div>
+        <div class="report-field full"><label for="dossierGaps">Пробелы, сомнения и ограничения</label><textarea id="dossierGaps" placeholder="Что не подтверждено, чего не хватает, какие есть альтернативные объяснения"></textarea></div>
+      </div>
+      <div class="report-actions">
+        <button id="generateDossierBtn" type="button">Составить досье</button>
+        <button id="copyDossierBtn" type="button" class="secondary-btn">Копировать текст</button>
+        <button id="downloadDossierBtn" type="button" class="secondary-btn">Скачать TXT</button>
+      </div>
+      <textarea id="dossierOutput" class="report-output" aria-label="Сгенерированное досье" placeholder="Здесь появится черновик досье. Его можно редактировать перед сохранением."></textarea>
+      <p class="report-note">Используй только сведения, которые имеешь право обрабатывать. Не добавляй пароли, закрытые данные, домашние адреса или другие чувствительные сведения о частных лицах. В оперативном и разведывательном формате выводы и уровень уверенности должны опираться на источники; шаблон не является реальной разведывательной оценкой.</p>
+    </div>
+
+    <div id="panel-settings" style="display:none;">
+      <div class="card">
+        <div class="card-title">Тема</div>
+        <p style="color:#999;font-size:.82rem;line-height:1.6;">Акцентный цвет — это цвет, которым светится выделенная цепочка в графе (и 2D, и 3D). Наведите курсор на точку или связь либо кликните по ней — подсветится вся цепочка.</p>
+        <div class="swatches" id="accentSwatches"></div>
+        <div class="theme-grid">
+          <label class="theme-row">Акцентный цвет <input type="color" id="thAccent"></label>
+          <label class="theme-row">Фон графа <input type="color" id="thGraphBg"></label>
+          <label class="theme-row">Цвет точек <input type="color" id="thNode"></label>
+          <label class="theme-row">Цвет связей <input type="color" id="thLink"></label>
+        </div>
+        <div class="theme-preview" id="themePreview"></div>
+        <div class="theme-warn" id="themeWarn">Акцент очень тёмный, а фон графа тёмный — цепочка будет плохо видна. Сделайте фон графа светлее (например, #e8e8ec).</div>
+        <div class="report-actions" style="margin-top:14px;"><button type="button" class="secondary-btn" id="themeReset">Сбросить тему</button></div>
+      </div>
+    </div>
+
+    <div class="terminal-wrapper no-print" id="terminalWrapper" data-html2pdf-ignore>
+      <div class="terminal" id="terminalOutput"></div>
+    </div>
+
+    <div class="graph-wrapper no-print" id="graphWrapper" data-html2pdf-ignore>
+      <div class="graph-toolbar no-print"><span class="graph-legend">тяните точку — она останется на месте (правый клик в 3D, двойной в 2D — открепить); тяните фон — вращение/сдвиг, колесо — масштаб; клик по сайту — открыть</span><span class="graph-btns"><button type="button" class="export-btn graph-mode-btn" id="graphFitBtn">Сбросить вид</button><button type="button" class="export-btn graph-mode-btn" id="graphFullBtn">На весь экран</button><button type="button" class="export-btn graph-mode-btn" id="graphModeBtn">Показать 2D</button></span></div>
+      <div id="network3d"></div>
+      <div id="network"></div>
+    </div>
+
+    <div class="export-wrapper no-print" id="exportWrapper" data-html2pdf-ignore>
+      <button class="export-btn" onclick="exportTXT()">Скачать TXT</button>
+      <button class="export-btn" onclick="exportHTML()">Скачать HTML</button>
+      <button class="export-btn" onclick="exportPDF()">Печать / PDF</button>
+    </div>
+
+    <section class="chain-block" id="chainBlock" aria-label="Цепочка связей">
+      <h3>Цепочка связей</h3>
+      <div id="printChain"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ================= ГЛОБАЛЬНОЕ СОСТОЯНИЕ ================= */
+let currentData = null;
+let currentType = null;
+let networkInstance = null;
+let maps = {};
+let lastPhoneReport = '';
+let lastGraph = null;   // данные графа для печатной цепочки
+let runToken = 0;       // защита от устаревших ответов внешних сервисов
+
+/* ================= TOAST ================= */
+let toastEl = null, toastTimer = null;
+function toast(msg) {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'toast';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  requestAnimationFrame(() => toastEl.classList.add('show'));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+/* ================= SVG ================= */
+const svgCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+const svgX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+const svgWarn = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+const svgLink = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+
+function escapeHtml(s) { if (s == null) return '—'; return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function yes() { return `<span class="value ok">${svgCheck} Да</span>`; }
+function no() { return `<span class="value no">${svgX} Нет</span>`; }
+function maybe() { return `<span class="value warn">${svgWarn} Возможно</span>`; }
+
+async function fetchWithTimeout(url, options = {}, ms = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+
+
+/* ================= ССЫЛКИ: ПРОВЕРКА И НОРМАЛИЗАЦИЯ ================= */
+/* @pure-start */
+function normalizeUrl(raw) {
+  if (typeof raw !== 'string') return null;
+  let v = raw.trim();
+  if (!v || v.length > 2048 || /[\s\u0000-\u001f\u007f]/.test(v)) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) { /* схема указана */ }
+  else if (v.startsWith('//')) v = 'https:' + v;
+  else if (/^(javascript|data|vbscript|file|blob|about|mailto|tel|sms):/i.test(v)) return null;
+  else v = 'https://' + v;
+  let u;
+  try { u = new URL(v); } catch (_) { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (!u.hostname || !/^[^.]+(\.[^.]+)+$/.test(u.hostname.replace(/\.$/, ''))) return null;
+  u.username = ''; u.password = '';
+  return u.href;
+}
+function hostOf(href) {
+  try { return new URL(href).hostname.replace(/^www\./i, ''); } catch (_) { return ''; }
+}
+const URL_KEYS = ['url_user', 'url', 'link', 'href', 'profile_url', 'profile', 'uri'];
+const NAME_KEYS = ['site_name', 'site', 'name', 'title', 'service', 'platform'];
+const USER_KEYS = ['username', 'user', 'login', 'nick', 'nickname'];
+const NEGATIVE_STATUS = ['available', 'illegal', 'unknown', 'waf', 'not found', 'notfound', 'error', 'invalid'];
+function extractFindings(input, source) {
+  const out = [], seen = new Set();
+  const push = (rawUrl, site, username) => {
+    if (out.length >= 150) return;
+    const href = normalizeUrl(rawUrl);
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    out.push({ url: href, site: (site && String(site).trim().slice(0, 80)) || hostOf(href), username: username ? String(username).slice(0, 80) : '', source });
+  };
+  const negative = o => {
+    if (o.exists === false || o.found === false) return true;
+    const st = o.status;
+    const t = (typeof st === 'string' ? st : (st && (st.status || st.state)) || '');
+    return typeof t === 'string' && NEGATIVE_STATUS.includes(t.trim().toLowerCase());
+  };
+  const walk = (node, key, depth) => {
+    if (depth > 8 || out.length >= 150 || node == null) return;
+    if (typeof node === 'string') { if (/^https?:\/\//i.test(node.trim())) push(node, /^\d+$/.test(key || '') ? '' : key, ''); return; }
+    if (Array.isArray(node)) { node.forEach(x => walk(x, key, depth + 1)); return; }
+    if (typeof node !== 'object') return;
+    if (negative(node)) return;
+    const uk = URL_KEYS.find(k => typeof node[k] === 'string' && node[k].trim());
+    if (uk) {
+      const nk = NAME_KEYS.find(k => typeof node[k] === 'string' && node[k].trim());
+      const usk = USER_KEYS.find(k => typeof node[k] === 'string' && node[k].trim());
+      push(node[uk], nk ? node[nk] : (key && !/^\d+$/.test(key) ? key : ''), usk ? node[usk] : '');
+      return;
+    }
+    Object.keys(node).forEach(k => walk(node[k], k, depth + 1));
+  };
+  let text = typeof input === 'string' ? input : null;
+  let data = null;
+  if (text !== null) { try { data = JSON.parse(text); } catch (_) { data = null; } } else data = input;
+  if (data !== null && typeof data === 'object') {
+    walk(data, '', 0);
+  } else if (text) {
+    text.split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*\[\+\]\s*([^:]+?):\s*(https?:\/\/\S+)/i);
+      if (m) { push(m[2].replace(/[.,;]+$/, ''), m[1], ''); return; }
+      (line.match(/https?:\/\/[^\s"'<>)\]]+/gi) || []).forEach(u => push(u.replace(/[.,;]+$/, ''), '', ''));
+    });
+  }
+  return out;
+}
+/* @pure-end */
+
+/* ================= ВНЕШНИЕ СЕРВИСЫ: PhoneInfoga / Maigret / Sherlock ================= */
+const SVC_DEFS = {
+  phoneinfoga: { label: 'PhoneInfoga', ph: 'https://ваш-шлюз/phoneinfoga?number={q}' },
+  maigret:     { label: 'Maigret',     ph: 'https://ваш-шлюз/maigret?username={local}' },
+  sherlock:    { label: 'Sherlock',    ph: 'https://ваш-шлюз/sherlock?username={local}' }
+};
+const SVC_STORE = 'kesai.svc.';
+const SHOW_SVC_SETTINGS = false;  // true — вернуть блок «Источники поиска» с ручной настройкой адресов
+const SVC_BASE = (location.protocol === 'http:' || location.protocol === 'https:') ? location.origin : 'http://127.0.0.1:8787';
+const SVC_DEFAULTS = {
+  phoneinfoga: SVC_BASE + '/phoneinfoga?number={q}',
+  maigret: SVC_BASE + '/maigret?username={local}',
+  sherlock: SVC_BASE + '/sherlock?username={local}'
+};
+function getSvcUrl(k) {
+  if (SHOW_SVC_SETTINGS) { try { const v = (localStorage.getItem(SVC_STORE + k) || '').trim(); if (v) return v; } catch (_) {} }
+  return SVC_DEFAULTS[k] || '';
+}
+function setSvcUrl(k, v) { try { v ? localStorage.setItem(SVC_STORE + k, v) : localStorage.removeItem(SVC_STORE + k); } catch (_) {} }
+
+function initSvcSettings() {
+  document.querySelectorAll('.svc-slot').forEach(slot => {
+    slot.innerHTML = `<details class="svc-settings"><summary>Источники поиска: PhoneInfoga, Maigret, Sherlock</summary>
+      ${Object.keys(SVC_DEFS).map(k => `<div class="svc-field"><label>${SVC_DEFS[k].label} — адрес сервиса
+        <input type="url" data-svc="${k}" placeholder="${escapeHtml(SVC_DEFS[k].ph)}" autocomplete="off" spellcheck="false"></label></div>`).join('')}
+      <p>Эти утилиты — консольные программы или серверы, из браузера их напрямую не запустить. Укажите адрес вашего HTTP-шлюза (GET-запрос, ответ JSON или текст со ссылками).
+      В адресе можно использовать <code>{q}</code> — введённое значение целиком, <code>{local}</code> — часть email до @ или цифры номера, <code>{type}</code> — email или phone.
+      Адрес хранится только в этом браузере.</p></details>`;
+    slot.querySelectorAll('input[data-svc]').forEach(inp => {
+      inp.value = getSvcUrl(inp.dataset.svc);
+      inp.addEventListener('change', () => {
+        const v = inp.value.trim();
+        if (v && !/^https?:\/\//i.test(v)) { toast('Адрес должен начинаться с http:// или https://'); return; }
+        setSvcUrl(inp.dataset.svc, v);
+        document.querySelectorAll('input[data-svc="' + inp.dataset.svc + '"]').forEach(o => { o.value = v; });
+      });
+    });
+  });
+}
+
+async function callService(key, q) {
+  const tpl = getSvcUrl(key);
+  if (!tpl) return { key, status: 'disabled', message: 'адрес сервиса не задан', findings: [] };
+  const url = tpl.replace(/\{q\}/g, encodeURIComponent(q.value)).replace(/\{local\}/g, encodeURIComponent(q.local))
+                 .replace(/\{type\}/g, q.type);
+  try { const u = new URL(url); if (u.protocol !== 'http:' && u.protocol !== 'https:') throw 0; }
+  catch (_) { return { key, status: 'error', message: 'некорректный адрес сервиса', findings: [] }; }
+  try {
+    const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json, text/plain;q=0.8' } }, 180000);
+    if (!res.ok) return { key, status: 'error', message: 'сервис ответил ошибкой HTTP ' + res.status, findings: [] };
+    const text = await res.text();
+    if (!text.trim()) return { key, status: 'empty', message: 'пустой ответ сервиса', findings: [] };
+    const findings = extractFindings(text, SVC_DEFS[key].label);
+    if (!findings.length) {
+      try { const j = JSON.parse(text); if (j && typeof j.error === 'string' && j.error.trim()) return { key, status: 'error', message: 'сервис вернул ошибку: ' + j.error.slice(0, 160), findings: [] }; } catch (_) {}
+    }
+    return { key, status: 'ok', message: findings.length ? '' : 'совпадений не найдено', findings };
+  } catch (e) {
+    if (e && e.name === 'AbortError') return { key, status: 'error', message: 'превышено время ожидания ответа', findings: [] };
+    return { key, status: 'error', message: 'сервис недоступен (проверьте адрес, запуск и CORS)', findings: [] };
+  }
+}
+
+/* ================= ОТРИСОВКА БЛОКОВ ================= */
+const svgMail = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`;
+const svgPhone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>`;
+const svgUsers = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+const svgEmpty = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>`;
+const svgGo = `<svg class="finding-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7"/><polyline points="8 7 17 7 17 16"/></svg>`;
+const svgArrow = `<svg class="chain-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>`;
+
+const BLOCKS = {
+  smtp:  { cls: 'smtp',  eyebrow: 'По почте',  title: 'SMTP',        suffix: '',                       icon: svgMail },
+  phone: { cls: 'phone', eyebrow: 'По номеру', title: 'PhoneInfoga', suffix: '',                       icon: svgPhone },
+  other: { cls: 'other', eyebrow: '',          title: 'Остальное',   suffix: '(Maigret, Sherlock…)',   icon: svgUsers }
+};
+function blockHtml(id) {
+  const b = BLOCKS[id];
+  return `<section class="rblock rblock-${b.cls}" data-block="${id}">
+    <header class="rblock-head"><span class="rblock-ico">${b.icon}</span><div>
+      ${b.eyebrow ? `<p class="rblock-eyebrow">${b.eyebrow}</p>` : ''}
+      <h3>${b.title}${b.suffix ? ` <small>${b.suffix}</small>` : ''}</h3></div></header>
+    <div class="rblock-body"></div></section>`;
+}
+function emptyHtml(hint) { return `<div class="empty">${svgEmpty}<span>Ничего не найдено</span>${hint ? `<small>${escapeHtml(hint)}</small>` : ''}</div>`; }
+function loadingHtml(text) { return `<div class="status loading"><div class="spinner"></div>${escapeHtml(text)}</div>`; }
+function badgeHue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+function findingsHtml(list) {
+  return `<div class="finding-list">${list.map(f => {
+    const href = normalizeUrl(f.url); if (!href) return '';
+    const host = hostOf(href), title = f.site || host;
+    const letter = (title.match(/[\p{L}\p{N}]/u) || ['•'])[0].toUpperCase();
+    return `<a class="finding" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(href)}">
+      <span class="site-badge" style="--h:${badgeHue(host)}" aria-hidden="true">${escapeHtml(letter)}</span>
+      <span class="finding-main"><span class="finding-title">${escapeHtml(title)}${f.username ? ' · ' + escapeHtml(f.username) : ''}</span><span class="finding-url">${escapeHtml(href)}</span></span>
+      <span class="src-pill">${escapeHtml(f.source)}</span>${svgGo}</a>`;
+  }).join('')}</div>`;
+}
+function notesHtml(notes) {
+  if (!notes.length) return '';
+  return `<ul class="svc-notes">${notes.map(n => `<li class="${n.cls}"><b>${escapeHtml(n.label)}</b> — ${escapeHtml(n.text)}</li>`).join('')}</ul>`;
+}
+
+function mountReport(r, opts) {
+  opts = opts || {};
+  r.innerHTML = `<div class="report">${['smtp', 'phone', 'other'].map(blockHtml).join('')}</div>`;
+  const body = id => r.querySelector(`[data-block="${id}"] .rblock-body`);
+  const rep = { smtp: body('smtp'), phone: body('phone'), other: body('other'), phonePrefix: opts.phoneHtml || '' };
+  rep.smtp.innerHTML = opts.smtpHtml || emptyHtml(opts.smtpHint);
+  rep.phone.innerHTML = opts.phoneHtml ? opts.phoneHtml + loadingHtml('Поиск через PhoneInfoga…') : emptyHtml(opts.phoneHint);
+  rep.other.innerHTML = loadingHtml('Поиск аккаунтов: Maigret, Sherlock…');
+  return rep;
+}
+function foldedHtml(list) {
+  const groups = new Map();
+  list.forEach(f => { if (!groups.has(f.source)) groups.set(f.source, []); groups.get(f.source).push(f); });
+  return [...groups].map(([src, items]) => `<details class="fold"><summary><span class="fold-arrow" aria-hidden="true"></span><span class="fold-title">${escapeHtml(src)}</span><span class="fold-count">${items.length}</span></summary>
+    <div class="fold-body">${items.length > 8 ? '<input class="fold-filter no-print" type="search" placeholder="Фильтр по сайту…" aria-label="Фильтр по сайту">' : ''}${findingsHtml(items)}</div></details>`).join('');
+}
+document.addEventListener('input', e => {
+  const inp = e.target && e.target.closest ? e.target.closest('.fold-filter') : null;
+  if (!inp) return;
+  const q = inp.value.trim().toLowerCase();
+  inp.closest('.fold-body').querySelectorAll('.finding').forEach(a => { a.style.display = !q || a.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+});
+/* при печати раскрываем все списки, чтобы ссылки попали в PDF */
+let foldState = null;
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('.fold-filter').forEach(i => { if (i.value) { i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); } });
+  foldState = [...document.querySelectorAll('details.fold')].map(d => { const o = d.open; d.open = true; return [d, o]; });
+});
+window.addEventListener('afterprint', () => { (foldState || []).forEach(([d, o]) => { d.open = o; }); foldState = null; });
+function fillBlock(el, prefixHtml, findings, notes, hint) {
+  el.innerHTML = (prefixHtml || '') + (findings.length ? foldedHtml(findings) : emptyHtml(hint)) + notesHtml(notes);
+}
+
+async function launchExternal(rep, queries, token, extra) {
+  extra = extra || {};
+  try {
+    const tasks = [];
+    queries.forEach(q => {
+      (q.type === 'phone' ? ['phoneinfoga', 'maigret', 'sherlock'] : ['maigret', 'sherlock'])
+        .forEach(k => tasks.push(callService(k, q).then(res => ({ ...res, q }))));
+    });
+    const results = await Promise.all(tasks);
+    if (token !== runToken) return;
+    const multi = queries.length > 1;
+    const collect = keys => {
+      const seen = new Set(), findings = [], notes = [];
+      results.filter(x => keys.includes(x.key)).forEach(x => {
+        const label = SVC_DEFS[x.key].label + (multi ? ` (${x.q.type === 'phone' ? 'номер' : 'email'})` : '');
+        x.findings.forEach(f => { if (!seen.has(f.url)) { seen.add(f.url); findings.push(f); } });
+        if (x.status === 'error') notes.push({ cls: 'err', label, text: x.message });
+        else if (x.status === 'empty') notes.push({ cls: 'warn', label, text: x.message });
+        else if (x.status === 'disabled') notes.push({ cls: 'info', label, text: x.message });
+        else if (!x.findings.length) notes.push({ cls: 'info', label, text: x.message });
+      });
+      return { findings, notes };
+    };
+    const ph = collect(['phoneinfoga']);
+    if (extra.phoneNote) ph.notes.unshift({ cls: 'warn', label: 'PhoneInfoga', text: extra.phoneNote });
+    const ot = collect(['maigret', 'sherlock']);
+    fillBlock(rep.phone, rep.phonePrefix, ph.findings, ph.notes, rep.phonePrefix || extra.phoneNote ? 'По данным PhoneInfoga' : 'Номер телефона не указан');
+    fillBlock(rep.other, '', ot.findings, ot.notes, '');
+    const all = [...ph.findings, ...ot.findings];
+    if (currentData) currentData.findings = all;
+    addFindingsToChain(all);
+  } catch (e) {
+    if (token !== runToken) return;
+    const note = [{ cls: 'err', label: 'Сервисы', text: 'не удалось обработать ответ: ' + (e && e.message ? e.message : 'неизвестная ошибка') }];
+    fillBlock(rep.phone, rep.phonePrefix, [], note, 'Данные недоступны');
+    fillBlock(rep.other, '', [], note, '');
+  }
+}
+
+/* ================= ЦЕПОЧКА СВЯЗЕЙ (вместо графа в PDF) ================= */
+const CHAIN_CAPS = [[/^email$/, 'Email'], [/^domain$/, 'Домен'], [/^mx_/, 'MX'], [/^ns_/, 'NS'], [/^a_/, 'IP'], [/^phone$/, 'Телефон'],
+  [/^country$/, 'Страна'], [/^ip$/, 'IP'], [/^network$/, 'Сеть'], [/^org$/, 'Организация'], [/^loc$/, 'Место'], [/^acc_/, 'Аккаунт'], [/^site_/, 'Сайт']];
+function addFindingsToChain(findings) {
+  if (!lastGraph || !lastGraph.nodes.length) return;
+  if (!lastGraph.edges) return;
+  lastGraph.nodes = lastGraph.nodes.filter(n => !/^(acc|site)_/.test(n.id));
+  lastGraph.edges = lastGraph.edges.filter(e => !/^(acc|site)_/.test(e.to));
+  const attach = lastGraph.nodes.some(n => n.id === 'domain') ? 'domain' : lastGraph.nodes[0].id;
+  findings.slice(0, 40).forEach((f, i) => {
+    const href = normalizeUrl(f.url); if (!href) return;
+    lastGraph.nodes.push({ id: 'acc_' + i, label: f.username || f.source, color: '#a855f7' });
+    lastGraph.nodes.push({ id: 'site_' + i, label: f.site || hostOf(href), url: href, color: '#ec4899' });
+    lastGraph.edges.push({ from: attach, to: 'acc_' + i }, { from: 'acc_' + i, to: 'site_' + i });
+  });
+  updateGraph(lastGraph.nodes, lastGraph.edges);   // перерисовать граф на экране и цепочку для PDF
+}
+function renderChain() {
+  const wrap = document.getElementById('chainBlock'), el = document.getElementById('printChain');
+  if (!wrap || !el) return;
+  if (!lastGraph || !lastGraph.nodes.length) { el.innerHTML = ''; wrap.classList.remove('has-chain'); return; }
+  const byId = new Map(lastGraph.nodes.map(n => [n.id, n]));
+  const out = new Map(), hasIn = new Set();
+  lastGraph.edges.forEach(e => {
+    if (!byId.has(e.from) || !byId.has(e.to)) return;
+    if (!out.has(e.from)) out.set(e.from, []);
+    out.get(e.from).push(e.to); hasIn.add(e.to);
+  });
+  const MAX = 14, paths = []; let total = 0;
+  const walk = (id, path) => {
+    if (path.length > 8 || path.includes(id)) return;
+    const p = [...path, id], kids = out.get(id) || [];
+    if (!kids.length) { total++; if (paths.length < MAX) paths.push(p); return; }
+    kids.forEach(k => walk(k, p));
+  };
+  lastGraph.nodes.filter(n => !hasIn.has(n.id)).forEach(n => walk(n.id, []));
+  const nodeHtml = (id, first) => {
+    const n = byId.get(id), cap = (CHAIN_CAPS.find(c => c[0].test(id)) || [])[1] || '';
+    const href = n.url ? normalizeUrl(n.url) : null;
+    const cls = 'chain-node' + (first ? ' is-first' : '') + (/^site_/.test(id) ? ' is-site' : '');
+    const inner = `${cap ? `<small>${cap}</small>` : ''}${escapeHtml(n.label)}`;
+    return href ? `<a class="${cls}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<span class="${cls}">${inner}</span>`;
+  };
+  el.innerHTML = paths.map(p => `<div class="chain-row">${p.map((id, i) => nodeHtml(id, i === 0)).join(svgArrow)}</div>`).join('')
+    + (total > paths.length ? `<p class="chain-more">…и ещё цепочек: ${total - paths.length}</p>` : '');
+  wrap.classList.toggle('has-chain', paths.length > 0);
+}
+
+/* ================= ШАПКА ПЕЧАТИ ================= */
+function renderPrintHead() {
+  const h = document.getElementById('printHead'); if (!h) return;
+  if (!currentData) { h.innerHTML = ''; return; }
+  h.innerHTML = `<b>KeSai · OSINT-отчёт</b><span>${escapeHtml(String(currentData.target || ''))} · ${escapeHtml(new Date().toLocaleString('ru-RU'))}</span>`;
+}
+window.addEventListener('beforeprint', renderPrintHead);
+
+/* ================= ПОЛЕ ТЕЛЕФОНА В EMAIL ================= */
+(function () {
+  const inp = document.getElementById('emailPhoneInput');
+  if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('emailBtn').click(); });
+})();
+
+/* ================= НАВИГАЦИЯ ================= */
+const menu = document.getElementById('mainMenu');
+const menuToggle = document.getElementById('menuToggle');
+const welcomeScreen = document.getElementById('welcomeScreen');
+const workspace = document.getElementById('workspace');
+const sectionTitles = {
+  domain: ['Домен', 'Регистрационные данные, DNS и связанные сведения.'],
+  ip: ['IP-адрес', 'Сведения о сети, диапазоне и организации.'],
+  email: ['Электронная почта', 'Проверка формата, MX-записей, SPF и DMARC.'],
+  phone: ['Телефон', 'Проверка формата, страны, оператора и типа номера.'],
+  reports: ['OSINT-отчёты', 'Составление связного отчёта по проверенным фактам и источникам.'],
+  dossier: ['OSINT-досье', 'Информационный, оперативный и разведывательный форматы по предоставленным материалам.'],
+  settings: ['Настройки', 'Тема оформления и цвет подсветки цепочки в графе.']
+};
+
+function closeMenu() { menu.classList.remove('menu-open'); menuToggle.setAttribute('aria-expanded', 'false'); }
+function openMenu() { menu.classList.add('menu-open'); menuToggle.setAttribute('aria-expanded', 'true'); }
+menuToggle.addEventListener('click', () => { menu.classList.contains('menu-open') ? closeMenu() : openMenu(); });
+document.getElementById('homeBrand').addEventListener('click', () => {
+  welcomeScreen.style.display = 'flex';
+  workspace.classList.remove('show');
+  closeMenu();
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  hideExtras();
+});
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const id = tab.dataset.tab;
+    ['domain','ip','email','phone','reports','dossier','settings'].forEach(p => {
+      document.getElementById('panel-' + p).style.display = (p === id) ? 'block' : 'none';
+    });
+    welcomeScreen.style.display = 'none';
+    workspace.classList.add('show');
+    document.getElementById('sectionTitle').textContent = sectionTitles[id][0];
+    document.getElementById('sectionDescription').textContent = sectionTitles[id][1];
+    closeMenu();
+    hideExtras();
+    const inp = document.getElementById(id + 'Input');
+    if (inp) setTimeout(() => inp.focus(), 120);
+    renderHistory(id);
+  });
+});
+document.addEventListener('click', e => {
+  if (!menu.contains(e.target) && !menuToggle.contains(e.target)) closeMenu();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+function hideExtras() {
+  if (typeof setGraphFull === 'function') setGraphFull(false);
+  document.getElementById('terminalWrapper').classList.remove('show');
+  document.getElementById('graphWrapper').classList.remove('show');
+  document.getElementById('exportWrapper').classList.remove('show');
+  lastGraph = null; renderChain();
+}
+
+/* ================= RU DEF-СПРАВОЧНИК ================= */
+const RU_DEF = {
+  "900":["МегаФон","—"],"901":["МегаФон","—"],"902":["МегаФон","—"],
+  "903":["Билайн","—"],"905":["Билайн","—"],"906":["Билайн","—"],
+  "908":["МТС","—"],"909":["Билайн","—"],
+  "910":["МТС","—"],"911":["МТС","—"],"912":["МТС","—"],"913":["МТС","—"],
+  "914":["МТС","—"],"915":["МТС","—"],"916":["МТС","—"],"917":["МТС","—"],
+  "918":["МТС","—"],"919":["МТС","—"],
+  "920":["МегаФон","—"],"921":["МегаФон","—"],"922":["МегаФон","—"],
+  "923":["МегаФон","—"],"924":["МегаФон","—"],"925":["МегаФон","—"],
+  "926":["МегаФон","—"],"927":["МегаФон","—"],"928":["МегаФон","—"],
+  "929":["МегаФон","—"],"930":["МегаФон","—"],"931":["МегаФон","—"],
+  "932":["МегаФон","—"],"933":["МегаФон","—"],"934":["МегаФон","—"],
+  "936":["МегаФон","—"],"937":["МегаФон","—"],"938":["МегаФон","—"],
+  "950":["Tele2","—"],"951":["Tele2","—"],"952":["Tele2","—"],
+  "953":["Tele2","—"],"958":["Tele2","—"],
+  "960":["Tele2","—"],"961":["Tele2","—"],"962":["Tele2","—"],
+  "963":["Tele2","—"],"964":["Tele2","—"],"965":["Tele2","—"],
+  "966":["Tele2","—"],"967":["Tele2","—"],"968":["Tele2","—"],
+  "969":["Tele2","—"],"977":["Tele2","—"],
+  "999":["МТС","—"]
+};
+function ruDefLookup(e164) {
+  if (!e164 || !e164.startsWith("+7")) return null;
+  const d = e164.slice(2);
+  if (d.length !== 10) return null;
+  const def = d.slice(0, 3);
+  const hit = RU_DEF[def];
+  return hit ? { def, operator: hit[0], region: hit[1] } : { def, operator: "—", region: "—" };
+}
+
+/* ================= ИСТОРИЯ ================= */
+function loadHistory(kind) {
+  try { return JSON.parse(localStorage.getItem("KeSai_hist_" + kind) || "[]"); }
+  catch (_) { return []; }
+}
+function pushHistory(kind, value) {
+  const v = String(value).trim(); if (!v) return;
+  let h = loadHistory(kind).filter(x => x !== v);
+  h.unshift(v); h = h.slice(0, 5);
+  try { localStorage.setItem("KeSai_hist_" + kind, JSON.stringify(h)); } catch (_) {}
+  renderHistory(kind);
+}
+function renderHistory(kind) {
+  const box = document.getElementById(kind + "History");
+  if (!box) return;
+  const h = loadHistory(kind);
+  box.innerHTML = "";
+  h.forEach(v => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = v;
+    chip.title = "Подставить в поле";
+    chip.onclick = () => {
+      const inp = document.getElementById(kind + "Input");
+      inp.value = v;
+      inp.dispatchEvent(new Event("input"));
+      inp.focus();
+    };
+    box.appendChild(chip);
+  });
+}
+
+/* ================= СКЕЛЕТОН ================= */
+function skeletonResult() {
+  return `<div class="status loading"><div class="spinner"></div>Запрос...</div>
+    <div class="card">
+      <div class="skeleton w60"></div>
+      <div class="skeleton w80"></div>
+      <div class="skeleton w60"></div>
+      <div class="skeleton w80"></div>
+    </div>`;
+}
+
+/* ================= COPY ================= */
+function makeCopyable(el, text) {
+  el.classList.add("copyable");
+  el.title = "Клик — скопировать";
+  el.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await copyText(text);
+    toast("Скопировано: " + (text.length > 40 ? text.slice(0, 40) + "…" : text));
+  });
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+  }
+}
+
+/* ================= CLEAR ================= */
+document.querySelectorAll(".input-group").forEach(g => {
+  const inp = g.querySelector("input");
+  if (!inp) return;
+  const upd = () => g.classList.toggle("has-value", inp.value.length > 0);
+  inp.addEventListener("input", upd);
+  upd();
+});
+["domain","ip","email","phone"].forEach(k => {
+  const clear = document.getElementById(k + "Clear");
+  const inp = document.getElementById(k + "Input");
+  if (!clear || !inp) return;
+  clear.onclick = () => { inp.value = ""; inp.dispatchEvent(new Event("input")); inp.focus(); };
+});
+
+/* ================= CTRL+ENTER ================= */
+["domain","ip","email","phone"].forEach(k => {
+  const inp = document.getElementById(k + "Input");
+  if (!inp) return;
+  inp.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") document.getElementById(k + "Btn").click();
+  });
+});
+
+/* ================= MAP ================= */
+function initMap(containerId, lat, lon, label, zoom) {
+  const el = document.getElementById(containerId);
+  if (maps[containerId]) { maps[containerId].remove(); maps[containerId] = null; }
+  el.innerHTML = '';
+  el.classList.add('map-visible');
+  const map = L.map(containerId, { zoomControl: true }).setView([lat, lon], zoom);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CartoDB', maxZoom: 19
+  }).addTo(map);
+  if (lat !== 20 || lon !== 0) L.marker([lat, lon]).addTo(map).bindPopup(label).openPopup();
+  maps[containerId] = map;
+  setTimeout(() => { if (maps[containerId]) maps[containerId].invalidateSize(); }, 250);
+  return map;
+}
+
+/* ================= TERMINAL / GRAPH ================= */
+function updateTerminal(text) {
+  const term = document.getElementById('terminalOutput');
+  term.textContent = text;
+  document.getElementById('terminalWrapper').classList.add('show');
+  term.classList.remove('show-glow');
+  void term.offsetWidth;
+  term.classList.add('show-glow');
+}
+let graphMode = '3d', graph3d = null;
+const pinned3d = new Map(), pinned2d = new Map();   // позиции точек, которые пользователь передвинул
+
+/* ---------- ТЕМА ---------- */
+const THEME_KEY = 'kesai_theme_v1';
+const THEME_DEFAULT = { accent: '#3b82f6', graphBg: '#0b0b0c', node: '#f0f0f0', link: '#9a9a9a' };
+let theme = { ...THEME_DEFAULT };
+try { const s = JSON.parse(localStorage.getItem(THEME_KEY) || 'null'); if (s && typeof s === 'object') { if (s.node === '#d0d0d0') delete s.node; if (s.link === '#5c5c5c') delete s.link; theme = { ...theme, ...s }; } } catch (_) {}
+const ACCENT_PRESETS = ['#3b82f6', '#a855f7', '#22c55e', '#ef4444', '#f59e0b', '#ec4899', '#ffffff', '#000000'];
+function lum(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
+}
+function applyTheme(save) {
+  const st = document.documentElement.style;
+  st.setProperty('--accent', theme.accent);
+  st.setProperty('--graph-bg', theme.graphBg);
+  st.setProperty('--graph-dot', lum(theme.graphBg) > .5 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.05)');
+  if (save) { try { localStorage.setItem(THEME_KEY, JSON.stringify(theme)); } catch (_) {} }
+  const set = (id, v) => { const el = document.getElementById(id); if (el && el.value !== v) el.value = v; };
+  set('thAccent', theme.accent); set('thGraphBg', theme.graphBg); set('thNode', theme.node); set('thLink', theme.link);
+  const warn = document.getElementById('themeWarn');
+  if (warn) warn.style.display = Math.abs(lum(theme.accent) - lum(theme.graphBg)) < 0.2 ? 'block' : 'none';
+  refreshGraphTheme();
+}
+function initThemeUI() {
+  const box = document.getElementById('accentSwatches');
+  ACCENT_PRESETS.forEach(c => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'swatch'; b.style.background = c; b.title = c;
+    b.addEventListener('click', () => { theme.accent = c; applyTheme(true); });
+    box.appendChild(b);
+  });
+  [['thAccent', 'accent'], ['thGraphBg', 'graphBg'], ['thNode', 'node'], ['thLink', 'link']].forEach(([id, key]) => {
+    document.getElementById(id).addEventListener('input', e => { theme[key] = e.target.value; applyTheme(true); });
+  });
+  document.getElementById('themeReset').addEventListener('click', () => { theme = { ...THEME_DEFAULT }; applyTheme(true); });
+}
+
+/* ---------- ЦЕПОЧКА (подсветка) ---------- */
+let hoverSel = null, pinSel = null;   // {type:'node', id} | {type:'link', from, to}
+let activeChain = null;
+const linkKey = (a, b) => a + '>' + b;
+const endId = v => (v && typeof v === 'object') ? v.id : v;
+function chainFor(sel) {
+  if (!sel || !lastGraph) return null;
+  const out = new Map(), inn = new Map();
+  lastGraph.edges.forEach(e => {
+    if (!e.from || !e.to) return;
+    if (!out.has(e.from)) out.set(e.from, []); out.get(e.from).push(e.to);
+    if (!inn.has(e.to)) inn.set(e.to, []); inn.get(e.to).push(e.from);
+  });
+  const nodes = new Set(), edges = new Set();
+  const walk = (start, adj, rev) => {
+    const seen = new Set([start]), st = [start];
+    while (st.length) {
+      const c = st.pop();
+      (adj.get(c) || []).forEach(n => {
+        edges.add(rev ? linkKey(n, c) : linkKey(c, n)); nodes.add(n);
+        if (!seen.has(n)) { seen.add(n); st.push(n); }
+      });
+    }
+  };
+  if (sel.type === 'node') { nodes.add(sel.id); walk(sel.id, inn, true); walk(sel.id, out, false); }
+  else { nodes.add(sel.from); nodes.add(sel.to); edges.add(linkKey(sel.from, sel.to)); walk(sel.from, inn, true); walk(sel.to, out, false); }
+  return { nodes, edges };
+}
+function setSelection() {
+  activeChain = chainFor(hoverSel || pinSel);
+  applyHighlight();
+}
+function applyHighlight() {
+  if (graph3d && graphMode === '3d') applyHighlight3d();
+  if (networkInstance && graphMode === '2d') applyHighlight2d();
+}
+
+/* ---------- 3D ---------- */
+const nodeObjs = new Map();   // id -> {mesh, halo}
+let glowTex = null;
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.2, 'rgba(255,255,255,.6)'); gr.addColorStop(.5, 'rgba(255,255,255,.16)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
+}
+let degMap = new Map();
+function nodeObj3d(n) {
+  if (typeof THREE === 'undefined') return undefined;   // запасной вариант — стандартные точки
+  const deg = degMap.get(n.id) || 1;
+  const r = 1.8 + 0.9 * Math.sqrt(deg);
+  const grp = new THREE.Group();
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), new THREE.MeshPhongMaterial({ color: theme.node, specular: 0x666666, shininess: 70 }));
+  grp.add(mesh);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: theme.accent, transparent: true, depthWrite: false, opacity: .9 }));
+  halo.scale.set(r * 9, r * 9, 1); halo.visible = false;
+  grp.add(halo);
+  if (typeof SpriteText === 'function') {
+    const txt = String(n.label || n.id); const t = new SpriteText(txt.length > 30 ? txt.slice(0, 29) + '…' : txt);
+    t.textHeight = 3.4; t.fontSize = 140; t.strokeWidth = 5; t.strokeColor = theme.graphBg; t.fontFace = 'Segoe UI, Roboto, sans-serif'; t.fontWeight = '500'; t.color = lum(theme.graphBg) > .5 ? '#1c1c1c' : '#e6e6e6'; t.material.depthWrite = false; t.material.depthTest = false; t.renderOrder = 10;
+    t.position.set(0, r + 3.4, 0);
+    grp.add(t);
+  }
+  nodeObjs.set(n.id, { mesh, halo, r });
+  return grp;
+}
+const linkIn = l => !!(activeChain && activeChain.edges.has(linkKey(endId(l.source), endId(l.target))));
+function applyHighlight3d() {
+  const dark = lum(theme.accent) < .25;
+  nodeObjs.forEach((o, id) => {
+    const hl = !!(activeChain && activeChain.nodes.has(id));
+    o.mesh.material.color.set(hl ? theme.accent : theme.node);
+    o.halo.visible = hl;
+    o.halo.material.color.set(theme.accent);
+    o.halo.material.blending = dark ? THREE.NormalBlending : THREE.AdditiveBlending;
+    o.halo.material.opacity = dark ? .55 : .9;
+    o.halo.material.needsUpdate = true;
+  });
+  graph3d
+    .linkColor(l => linkIn(l) ? theme.accent : theme.link)
+    .linkWidth(l => linkIn(l) ? 1.4 : 0.45)
+    .linkDirectionalParticles(l => linkIn(l) ? 3 : 0)
+    .linkDirectionalParticleWidth(1.8)
+    .linkDirectionalParticleColor(() => theme.accent)
+    .linkDirectionalParticleSpeed(0.012);
+}
+function setupQuality3d() {
+  try { graph3d.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5)); } catch (_) {}
+  if (typeof THREE === 'undefined') return;
+  try {
+    const sc = graph3d.scene();
+    sc.add(new THREE.AmbientLight(0xffffff, 1.25));
+    const k = new THREE.DirectionalLight(0xffffff, 1.1); k.position.set(120, 180, 160); sc.add(k);
+    const f = new THREE.DirectionalLight(0x9db4ff, 0.45); f.position.set(-150, -60, -120); sc.add(f);
+    updateFog3d();
+  } catch (_) {}
+}
+function updateFog3d() {   // лёгкая дымка: дальние точки плавно уходят в фон — объём как на фото
+  if (!graph3d || typeof THREE === 'undefined') return;
+  try { graph3d.scene().fog = new THREE.Fog(new THREE.Color(theme.graphBg), 500, 2200); } catch (_) {}
+}
+function render3d() {
+  const c = document.getElementById('network3d');
+  const edges = lastGraph.edges.filter(e => e.from && e.to);
+  degMap = new Map();
+  edges.forEach(e => { degMap.set(e.from, (degMap.get(e.from) || 0) + 1); degMap.set(e.to, (degMap.get(e.to) || 0) + 1); });
+  const data = {
+    nodes: lastGraph.nodes.map(n => ({ ...n, ...(pinned3d.has(n.id) ? pinned3d.get(n.id) : {}) })),
+    links: edges.map(e => ({ source: e.from, target: e.to }))
+  };
+  nodeObjs.clear();
+  const fresh = !graph3d;
+  if (fresh) {
+    graph3d = ForceGraph3D({ rendererConfig: { antialias: true, alpha: true, powerPreference: 'high-performance' } })(c)
+      .backgroundColor('rgba(0,0,0,0)')
+      .showNavInfo(false)
+      .enableNodeDrag(true).enableNavigationControls(true).enablePointerInteraction(true)
+      .nodeLabel(n => escapeHtml(n.label) + (n.url ? '<br><small>клик — открыть сайт</small>' : ''))
+      .nodeColor(() => theme.node)
+      .nodeRelSize(2).nodeOpacity(1).nodeResolution(10)
+      .nodeThreeObject(nodeObj3d)
+      .linkOpacity(0.85).linkHoverPrecision(6).linkResolution(8).linkCurvature(0)
+      .linkDirectionalArrowLength(3.5).linkDirectionalArrowRelPos(1)
+      .onNodeHover(n => { hoverSel = n ? { type: 'node', id: n.id } : null; c.style.cursor = n ? 'pointer' : ''; setSelection(); })
+      .onLinkHover(l => { hoverSel = l ? { type: 'link', from: endId(l.source), to: endId(l.target) } : null; setSelection(); })
+      .onNodeClick(n => {
+        pinSel = (pinSel && pinSel.type === 'node' && pinSel.id === n.id) ? null : { type: 'node', id: n.id };
+        setSelection(); openNodeUrl(n);
+      })
+      .onLinkClick(l => { pinSel = { type: 'link', from: endId(l.source), to: endId(l.target) }; setSelection(); })
+      .onBackgroundClick(() => { pinSel = null; setSelection(); })
+      .onNodeDrag(n => { hoverSel = { type: 'node', id: n.id }; setSelection(); })
+      .onNodeDragEnd(n => {   // отпустили точку — она остаётся на месте
+        n.fx = n.x; n.fy = n.y; n.fz = n.z;
+        pinned3d.set(n.id, { fx: n.x, fy: n.y, fz: n.z });
+      })
+      .onNodeRightClick(n => {   // правый клик — открепить точку
+        n.fx = n.fy = n.fz = undefined;
+        pinned3d.delete(n.id);
+        graph3d.d3ReheatSimulation();
+      });
+  }
+  if (fresh) setupQuality3d();
+  // раскладка как «звёздная карта»: длинные спицы у хабов, короткие у листьев, большая отталкивающая сила
+  const linkDist = l => {
+    const a = degMap.get(endId(l.source)) || 1, b = degMap.get(endId(l.target)) || 1;
+    return 26 + 20 * Math.sqrt(Math.max(a, b) - 1) + (Math.min(a, b) === 1 ? 6 : 22);
+  };
+  graph3d.d3Force('link').distance(linkDist).strength(0.6);
+  graph3d.d3Force('charge').strength(-140).distanceMax(500);
+  graph3d.d3VelocityDecay(0.28);
+  graph3d.width(c.clientWidth || 600).height(c.clientHeight || 420).graphData(data);
+  hoverSel = null; pinSel = null; activeChain = null;
+  applyHighlight3d();
+  if (fresh) setTimeout(() => { try { graph3d.cameraPosition({ x: 0, y: 40, z: 260 }); } catch (_) {} }, 50);
+  else graph3d.zoomToFit(600, 30);
+}
+
+/* ---------- 2D ---------- */
+let nodes2d = null, edges2d = null, edgeList2d = [];
+function applyHighlight2d() {
+  if (!nodes2d || !edges2d) return;
+  const labelCol = lum(theme.graphBg) > .5 ? '#333' : '#ddd';
+  nodes2d.update(nodes2d.getIds().map(id => {
+    const hl = !!(activeChain && activeChain.nodes.has(id));
+    return { id, color: hl ? theme.accent : theme.node, font: { color: labelCol, size: 11 },
+      shadow: hl ? { enabled: true, color: theme.accent, size: 18, x: 0, y: 0 } : { enabled: false } };
+  }));
+  edges2d.update(edgeList2d.map(e => {
+    const hl = !!(activeChain && activeChain.edges.has(linkKey(e.from, e.to)));
+    return { id: e.id, width: hl ? 3 : 1,
+      color: { color: hl ? theme.accent : theme.link, highlight: theme.accent, hover: theme.accent },
+      shadow: hl ? { enabled: true, color: theme.accent, size: 16, x: 0, y: 0 } : { enabled: false } };
+  }));
+}
+function render2d() {
+  const nodes = lastGraph.nodes, edges = lastGraph.edges;
+  const container = document.getElementById('network');
+  container.innerHTML = '';
+  edgeList2d = edges.map((e, i) => ({ ...e, id: 'e' + i }));
+  nodes2d = new vis.DataSet(nodes.map(n => ({ ...n, color: theme.node, ...(pinned2d.has(n.id) ? { ...pinned2d.get(n.id), fixed: true } : {}) })));
+  edges2d = new vis.DataSet(edgeList2d.map(e => ({ ...e })));
+  const options = {
+    nodes: { shape: 'dot', size: 4, font: { color: '#ddd', size: 11 }, borderWidth: 0 },
+    edges: { color: { color: theme.link, highlight: theme.accent, hover: theme.accent }, width: 1, arrows: { to: { scaleFactor: .5 } }, smooth: { type: 'dynamic' }, hoverWidth: 0 },
+    physics: { stabilization: { iterations: 120 } },
+    layout: { randomSeed: 2 },
+    interaction: { hover: true, tooltipDelay: 200, dragNodes: true, dragView: true, zoomView: true, multiselect: false }
+  };
+  if (networkInstance) networkInstance.destroy();
+  networkInstance = new vis.Network(container, { nodes: nodes2d, edges: edges2d }, options);
+  const edgeById = id => edgeList2d.find(e => e.id === id);
+  networkInstance.on('hoverNode', p => { hoverSel = { type: 'node', id: p.node }; setSelection(); });
+  networkInstance.on('blurNode', () => { hoverSel = null; setSelection(); });
+  networkInstance.on('hoverEdge', p => { const e = edgeById(p.edge); if (e) { hoverSel = { type: 'link', from: e.from, to: e.to }; setSelection(); } });
+  networkInstance.on('blurEdge', () => { hoverSel = null; setSelection(); });
+  networkInstance.on('click', params => {
+    if (params.nodes.length) {
+      const id = params.nodes[0];
+      pinSel = (pinSel && pinSel.type === 'node' && pinSel.id === id) ? null : { type: 'node', id };
+      openNodeUrl(nodes.find(n => n.id === id));
+    } else if (params.edges.length) {
+      const e = edgeById(params.edges[0]); pinSel = e ? { type: 'link', from: e.from, to: e.to } : null;
+    } else pinSel = null;
+    setSelection();
+  });
+  networkInstance.on('dragEnd', params => {   // отпустили точку — она остаётся на месте
+    if (!params.nodes.length) return;
+    const pos = networkInstance.getPositions(params.nodes);
+    params.nodes.forEach(id => { pinned2d.set(id, pos[id]); nodes2d.update({ id, x: pos[id].x, y: pos[id].y, fixed: true }); });
+  });
+  networkInstance.on('doubleClick', params => {   // двойной клик — открепить точку
+    params.nodes.forEach(id => { pinned2d.delete(id); nodes2d.update({ id, fixed: false }); });
+  });
+  hoverSel = null; pinSel = null; activeChain = null;
+  applyHighlight2d();
+}
+function refreshGraphTheme() {
+  if (!lastGraph) return;
+  if (graph3d && graphMode === '3d') {
+    nodeObjs.clear();
+    updateFog3d();
+    graph3d.nodeThreeObject(nodeObj3d);   // пересобрать точки/подписи под новую тему
+    applyHighlight3d();
+  } else if (graphMode === '2d' && nodes2d) applyHighlight2d();
+}
+function renderGraphView() {
+  if (!lastGraph) return;
+  const c2 = document.getElementById('network'), c3 = document.getElementById('network3d');
+  const btn = document.getElementById('graphModeBtn');
+  const can3d = typeof ForceGraph3D === 'function';
+  let use3d = graphMode === '3d' && can3d;
+  if (use3d) {
+    try { c3.style.display = 'block'; c2.style.display = 'none'; render3d(); }
+    catch (_) { use3d = false; graphMode = '2d'; graph3d = null; c3.innerHTML = ''; }
+  }
+  if (!use3d) { c3.style.display = 'none'; c2.style.display = 'block'; render2d(); }
+  btn.style.display = can3d ? '' : 'none';
+  btn.textContent = use3d ? 'Показать 2D' : 'Показать 3D';
+}
+
+function updateGraph(nodes, edges) {
+  lastGraph = { nodes: nodes.map(n => ({ ...n })), edges: edges.map(e => ({ ...e })) };
+  document.getElementById('graphWrapper').classList.add('show');
+  renderGraphView();
+  renderChain();
+}
+function openNodeUrl(node) {
+  const href = node && node.url ? normalizeUrl(node.url) : null;
+  if (href) window.open(href, '_blank', 'noopener,noreferrer');
+}
+
+/* ---------- ПОЛНЫЙ ЭКРАН ---------- */
+function resizeGraphs() {
+  const c = document.getElementById('network3d');
+  if (graph3d && graphMode === '3d' && c.clientWidth) graph3d.width(c.clientWidth).height(c.clientHeight || 420);
+  if (networkInstance && graphMode === '2d') { networkInstance.redraw(); networkInstance.fit({ animation: false }); }
+}
+function setGraphFull(on) {
+  const w = document.getElementById('graphWrapper'), b = document.getElementById('graphFullBtn');
+  if (on === w.classList.contains('graph-full')) return;
+  w.classList.toggle('graph-full', on);
+  document.body.classList.toggle('graph-fs-lock', on);
+  b.textContent = on ? 'Выйти из полного экрана' : 'На весь экран';
+  try {
+    if (on && w.requestFullscreen && !document.fullscreenElement) w.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch (_) {}
+  setTimeout(resizeGraphs, 60); setTimeout(resizeGraphs, 350);
+  if (on && graph3d && graphMode === '3d') setTimeout(() => { try { graph3d.zoomToFit(500, 40); } catch (_) {} }, 400);
+}
+document.getElementById('graphFitBtn').addEventListener('click', () => {
+  if (graph3d && graphMode === '3d') graph3d.zoomToFit(600, 40);
+  else if (networkInstance) networkInstance.fit({ animation: { duration: 500 } });
+});
+document.getElementById('graphFullBtn').addEventListener('click', () => setGraphFull(!document.getElementById('graphWrapper').classList.contains('graph-full')));
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) setGraphFull(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setGraphFull(false); });
+document.getElementById('graphModeBtn').addEventListener('click', () => {
+  graphMode = graphMode === '3d' ? '2d' : '3d';
+  renderGraphView();
+  setTimeout(resizeGraphs, 60);
+});
+window.addEventListener('resize', () => {
+  resizeGraphs();
+});
+
+/* ================= GEO ================= */
+async function geoLookup(ip) {
+  try {
+    const r = await fetchWithTimeout(`https://ipwho.is/${encodeURIComponent(ip)}`, {}, 6000);
+    const d = await r.json();
+    if (d && d.success && typeof d.latitude === 'number') {
+      return { lat: d.latitude, lon: d.longitude, city: d.city || '', country: d.country || '', isp: (d.connection && d.connection.isp) || '' };
+    }
+  } catch (_) {}
+  return null;
+}
+
+/* ================= СБРОС ================= */
+function resetState() { runToken++; pinned3d.clear(); pinned2d.clear(); currentData = null; currentType = null; lastGraph = null; renderChain(); document.getElementById('exportWrapper').classList.remove('show'); }
+
+/* ================= DOMAIN ================= */
+async function doDomain() {
+  resetState();
+  const d = document.getElementById('domainInput').value.trim().toLowerCase();
+  const r = document.getElementById('domainResult');
+  const btn = document.getElementById('domainBtn');
+  if (!d || !/^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63}(?<!-))*\.[A-Za-z]{2,}$/.test(d)) {
+    r.className = 'result show';
+    r.innerHTML = `<div class="status invalid">${svgX} Некорректный домен</div>`;
+    return;
+  }
+  r.className = 'result show';
+  r.innerHTML = skeletonResult();
+  btn.disabled = true;
+
+  try {
+    const res = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(d)}`);
+    if (!res.ok) throw new Error(`RDAP: HTTP ${res.status}`);
+    const data = await res.json();
+
+    const ev = a => { const e = (data.events || []).find(x => x.eventAction === a); return e ? new Date(e.eventDate).toLocaleDateString('ru-RU') : '—'; };
+    const reg = (data.entities || []).find(e => e.roles?.includes('registrar'));
+    const regName = reg?.vcardArray?.[1]?.find(v => v[0] === 'fn')?.[3] || '—';
+    const ns = (data.nameservers || []).map(x => x.ldhName).filter(Boolean);
+
+    // A-запись домена
+    let aRecords = [];
+    try {
+      const aRes = await fetchWithTimeout(`https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`);
+      const aData = await aRes.json();
+      aRecords = (aData.Answer || []).filter(a => a.type === 1).map(a => a.data);
+    } catch (_) {}
+
+    r.innerHTML = `<div class="status valid">${svgCheck} Домен найден</div><div class="card">
+      <div class="row"><span class="label">Домен</span><span class="value">${escapeHtml(data.ldhName || d)}</span></div>
+      <div class="row"><span class="label">Регистратор</span><span class="value">${escapeHtml(regName)}</span></div>
+      <div class="row"><span class="label">Создан</span><span class="value">${ev('registration')}</span></div>
+      <div class="row"><span class="label">Обновлён</span><span class="value">${ev('last changed')}</span></div>
+      <div class="row"><span class="label">Истекает</span><span class="value">${ev('expiration')}</span></div>
+      <div class="row"><span class="label">Статус</span><span class="value">${escapeHtml((data.status || []).join(', ') || '—')}</span></div>
+      <div class="row"><span class="label">NS</span><span class="value">${ns.length ? ns.map(escapeHtml).join('<br>') : '—'}</span></div>
+      ${aRecords.length ? `<div class="row"><span class="label">A-записи</span><span class="value">${aRecords.map(escapeHtml).join('<br>')}</span></div>` : ''}
+    </div>`;
+
+    r.querySelectorAll('.row .value').forEach(el => {
+      const txt = el.textContent.trim();
+      if (txt && txt !== '—') makeCopyable(el, txt);
+    });
+
+    let termText = `Domain: ${d}\nRegistrar: ${regName}\nCreated: ${ev('registration')}\nExpires: ${ev('expiration')}\nNS: ${ns.join(', ')}\nA: ${aRecords.join(', ') || '—'}\n`;
+    let nodes = [{ id: 'domain', label: d, color: '#3b82f6' }];
+    let edges = [];
+    ns.forEach((n, i) => { nodes.push({ id: 'ns_' + i, label: n, color: '#22c55e' }); edges.push({ from: 'domain', to: 'ns_' + i }); });
+    aRecords.forEach((ip, i) => { nodes.push({ id: 'a_' + i, label: ip, color: '#f59e0b' }); edges.push({ from: 'domain', to: 'a_' + i }); });
+
+    let lat = 20, lon = 0, zoom = 2, label = `${d} — координаты не определены`;
+    if (aRecords.length) {
+      const geo = await geoLookup(aRecords[0]);
+      if (geo) {
+        lat = geo.lat; lon = geo.lon; zoom = 8;
+        label = `${d} → ${geo.city || ''}, ${geo.country || ''}`;
+        termText += `Location: ${geo.city}, ${geo.country}\nISP: ${geo.isp}\n`;
+        nodes.push({ id: 'loc', label: `${geo.city}, ${geo.country}`, color: '#ef4444' });
+        edges.push({ from: 'a_0', to: 'loc' });
+      }
+    }
+
+    initMap('domainMap', lat, lon, label, zoom);
+    updateTerminal(termText);
+    updateGraph(nodes, edges);
+
+    currentData = { target: d, type: 'domain', domain: data.ldhName || d, registrar: regName,
+      created: ev('registration'), expires: ev('expiration'), status: (data.status || []).join(', '), ns, aRecords };
+    currentType = 'domain';
+    document.getElementById('exportWrapper').classList.add('show');
+    pushHistory('domain', d);
+  } catch (e) {
+    r.innerHTML = `<div class="status invalid">${svgX} ${escapeHtml(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+/* ================= IP ================= */
+async function doIP() {
+  resetState();
+  const ip = document.getElementById('ipInput').value.trim();
+  const r = document.getElementById('ipResult');
+  const btn = document.getElementById('ipBtn');
+  if (!/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip)) {
+    r.className = 'result show';
+    r.innerHTML = `<div class="status invalid">${svgX} Некорректный IPv4</div>`;
+    return;
+  }
+  r.className = 'result show';
+  r.innerHTML = skeletonResult();
+  btn.disabled = true;
+
+  try {
+    const res = await fetchWithTimeout(`https://rdap.org/ip/${encodeURIComponent(ip)}`);
+    if (!res.ok) throw new Error(`RDAP: HTTP ${res.status}`);
+    const d = await res.json();
+    let org = '—';
+    if (d.entities) {
+      const e = d.entities.find(x => x.roles?.includes('registrant') || x.roles?.includes('administrative'));
+      if (e?.vcardArray?.[1]) { const fn = e.vcardArray[1].find(v => v[0] === 'fn'); if (fn) org = fn[3]; }
+    }
+
+    r.innerHTML = `<div class="status valid">${svgCheck} IP найден</div><div class="card">
+      <div class="row"><span class="label">Сеть</span><span class="value">${escapeHtml(d.name || '—')}</span></div>
+      <div class="row"><span class="label">Handle</span><span class="value">${escapeHtml(d.handle || '—')}</span></div>
+      <div class="row"><span class="label">Диапазон</span><span class="value">${escapeHtml(d.startAddress || '—')} — ${escapeHtml(d.endAddress || '—')}</span></div>
+      <div class="row"><span class="label">Страна</span><span class="value">${escapeHtml(d.country || '—')}</span></div>
+      <div class="row"><span class="label">Тип</span><span class="value">${escapeHtml(d.type || '—')}</span></div>
+      <div class="row"><span class="label">Организация</span><span class="value">${escapeHtml(org)}</span></div>
+    </div>`;
+
+    r.querySelectorAll('.row .value').forEach(el => {
+      const txt = el.textContent.trim();
+      if (txt && txt !== '—') makeCopyable(el, txt);
+    });
+
+    let termText = `IP: ${ip}\nNetwork: ${d.name || '—'}\nRange: ${d.startAddress || '—'} - ${d.endAddress || '—'}\nCountry: ${d.country || '—'}\nOrg: ${org}\n`;
+    let nodes = [{ id: 'ip', label: ip, color: '#3b82f6' }, { id: 'network', label: d.name || 'Network', color: '#22c55e' }, { id: 'org', label: org, color: '#f59e0b' }];
+    let edges = [{ from: 'ip', to: 'network' }, { from: 'ip', to: 'org' }];
+
+    let lat = 20, lon = 0, zoom = 2, label = `${ip} — координаты не определены`;
+    const geo = await geoLookup(ip);
+    if (geo) {
+      lat = geo.lat; lon = geo.lon; zoom = 9;
+      label = `${ip} — ${geo.city || ''}, ${geo.country || ''} (${geo.isp || ''})`;
+      termText += `City: ${geo.city}\nISP: ${geo.isp}\n`;
+      nodes.push({ id: 'loc', label: `${geo.city}, ${geo.country}`, color: '#ef4444' });
+      edges.push({ from: 'ip', to: 'loc' });
+    }
+
+    initMap('ipMap', lat, lon, label, zoom);
+    updateTerminal(termText);
+    updateGraph(nodes, edges);
+
+    currentData = { target: ip, type: 'ip', ip, network: d.name || '—',
+      range: `${d.startAddress || '—'} - ${d.endAddress || '—'}`,
+      country: d.country || '—', org };
+    currentType = 'ip';
+    document.getElementById('exportWrapper').classList.add('show');
+    pushHistory('ip', ip);
+  } catch (e) {
+    r.innerHTML = `<div class="status invalid">${svgX} ${escapeHtml(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+/* ================= EMAIL + SPF/DMARC ================= */
+async function doEmail() {
+  resetState();
+  const email = document.getElementById('emailInput').value.trim().toLowerCase();
+  const r = document.getElementById('emailResult');
+  const btn = document.getElementById('emailBtn');
+  r.className = 'result show';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    r.innerHTML = `<div class="status invalid">${svgX} Некорректный email</div>`;
+    return;
+  }
+  const token = runToken;
+  const [local, domain] = email.split('@');
+  const popular = ['gmail.com','yandex.ru','mail.ru','outlook.com','yahoo.com','icloud.com','proton.me','rambler.ru','bk.ru','list.ru','inbox.ru'];
+  const isPop = popular.includes(domain);
+  const isTemp = /(temp|throw|guerr|mailinator|10min|yopmail|dropmail|tempmail)/i.test(domain);
+  r.innerHTML = skeletonResult();
+  btn.disabled = true;
+
+  try {
+    // MX
+    const dns = await fetchWithTimeout(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`);
+    const dnsData = await dns.json();
+    const mx = (dnsData.Answer || []).filter(a => a.type === 15);
+
+    // SPF (TXT с v=spf1)
+    let spf = '—';
+    try {
+      const txtRes = await fetchWithTimeout(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=TXT`);
+      const txtData = await txtRes.json();
+      const txtRecords = (txtData.Answer || []).filter(a => a.type === 16).map(a => a.data.replace(/^"|"$/g, ''));
+      const spfRec = txtRecords.find(t => t.toLowerCase().startsWith('v=spf1'));
+      if (spfRec) spf = spfRec;
+    } catch (_) {}
+
+    // DMARC (TXT _dmarc.domain)
+    let dmarc = '—';
+    let dmarcPolicy = '—';
+    try {
+      const dmarcRes = await fetchWithTimeout(`https://dns.google/resolve?name=_dmarc.${encodeURIComponent(domain)}&type=TXT`);
+      const dmarcData = await dmarcRes.json();
+      const dmarcRecords = (dmarcData.Answer || []).filter(a => a.type === 16).map(a => a.data.replace(/^"|"$/g, ''));
+      const dmarcRec = dmarcRecords.find(t => t.toLowerCase().startsWith('v=dmarc1'));
+      if (dmarcRec) {
+        dmarc = dmarcRec;
+        const m = dmarcRec.match(/p=(\w+)/i);
+        if (m) dmarcPolicy = m[1];
+      }
+    } catch (_) {}
+
+    const smtpHtml = `<div class="status valid">${svgCheck} Синтаксис корректен</div><div class="card">
+      <div class="row"><span class="label">Локальная часть</span><span class="value">${escapeHtml(local)}</span></div>
+      <div class="row"><span class="label">Домен</span><span class="value">${escapeHtml(domain)}</span></div>
+      <div class="row"><span class="label">Популярный сервис</span>${isPop ? yes() : no()}</div>
+      <div class="row"><span class="label">Одноразовый</span>${isTemp ? maybe() : no()}</div>
+      <div class="row"><span class="label">MX-записи</span>${mx.length ? `<span class="value ok">${svgCheck} Найдены (${mx.length})</span>` : `<span class="value no">${svgX} Не найдены</span>`}</div>
+      ${mx.slice(0, 5).map(m => `<div class="row"><span class="label">${svgLink}</span><span class="value">${escapeHtml((m.data || '').split(' ').pop())}</span></div>`).join('')}
+      <div class="row"><span class="label">SPF</span><span class="value" style="font-size:.72rem;">${escapeHtml(spf.length > 60 ? spf.slice(0, 60) + '…' : spf)}</span></div>
+      <div class="row"><span class="label">DMARC</span><span class="value" style="font-size:.72rem;">${escapeHtml(dmarc.length > 60 ? dmarc.slice(0, 60) + '…' : dmarc)}</span></div>
+      <div class="row"><span class="label">DMARC policy</span><span class="value">${escapeHtml(dmarcPolicy)}</span></div>
+      <div class="row"><span class="label">Принимает почту</span>${mx.length ? yes() : no()}</div>
+    </div>`;
+    const rep = mountReport(r, { smtpHtml, phoneHint: 'Номер телефона не указан' });
+
+    r.querySelectorAll('.row .value').forEach(el => {
+      const txt = el.textContent.trim();
+      if (txt && txt !== '—' && txt !== 'Да' && txt !== 'Нет' && txt !== 'Возможно') makeCopyable(el, txt);
+    });
+
+    let termText = `Email: ${email}\nDomain: ${domain}\nLocal: ${local}\nMX Count: ${mx.length}\n`;
+    mx.forEach((m, i) => { termText += `MX${i}: ${m.data.split(' ').pop()}\n`; });
+    termText += `SPF: ${spf}\nDMARC: ${dmarc}\nDMARC policy: ${dmarcPolicy}\n`;
+
+    let nodes = [{ id: 'email', label: email, color: '#3b82f6' }, { id: 'domain', label: domain, color: '#22c55e' }];
+    let edges = [{ from: 'email', to: 'domain' }];
+    mx.forEach((m, i) => { nodes.push({ id: 'mx_' + i, label: m.data.split(' ').pop(), color: '#f59e0b' }); edges.push({ from: 'domain', to: 'mx_' + i }); });
+
+    updateTerminal(termText);
+    updateGraph(nodes, edges);
+
+    currentData = { target: email, type: 'email', email, domain, mx: mx.map(m => m.data.split(' ').pop()), spf, dmarc, dmarcPolicy };
+    currentType = 'email';
+    document.getElementById('exportWrapper').classList.add('show');
+    pushHistory('email', email);
+
+    const queries = [{ type: 'email', value: email, local }];
+    let phoneNote = '';
+    const rawPhone = (document.getElementById('emailPhoneInput').value || '').trim();
+    if (rawPhone) {
+      try {
+        const p = libphonenumber.parsePhoneNumber(rawPhone);
+        queries.push({ type: 'phone', value: p.number, local: p.number.replace(/\D/g, '') });
+      } catch (_) { phoneNote = 'номер телефона не распознан — проверьте формат'; }
+    }
+    launchExternal(rep, queries, token, { phoneNote });
+  } catch (e) {
+    r.innerHTML = `<div class="status invalid">${svgX} Ошибка DNS: ${escapeHtml(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+/* ================= PHONE ================= */
+function doPhone() {
+  resetState();
+  const raw = document.getElementById('phoneInput').value.trim();
+  const r = document.getElementById('phoneResult');
+  const btn = document.getElementById('phoneBtn');
+  r.className = 'result show';
+  if (!raw) { r.innerHTML = `<div class="status invalid">${svgX} Введите номер</div>`; return; }
+  btn.disabled = true;
+  r.innerHTML = skeletonResult();
+  const token = runToken;
+
+  try {
+    const phone = libphonenumber.parsePhoneNumber(raw);
+    const valid = phone.isValid();
+    const possible = phone.isPossible();
+    const fmtIntl = phone.format('INTERNATIONAL');
+    const fmtNat = phone.format('NATIONAL');
+    const country = phone.country || '—';
+    const callingCode = phone.countryCallingCode;
+    const defInfo = ruDefLookup(phone.number);
+
+    const regionHtml = defInfo && defInfo.region !== '—'
+      ? `<span class="value" title="Приблизительно, по DEF-коду">${escapeHtml(defInfo.region)} <span style="color:#666;font-size:.7rem;">~</span></span>`
+      : `<span class="value">—</span>`;
+    const operatorHtml = defInfo
+      ? `<span class="value ${defInfo.operator !== '—' ? 'ok' : ''}">${escapeHtml(defInfo.operator)}</span>`
+      : `<span class="value">—</span>`;
+
+    const phoneHtml = `<div class="status ${valid ? 'valid' : 'invalid'}">${valid ? svgCheck : svgX} ${valid ? 'Номер валиден' : 'Номер невалиден'}</div><div class="card">
+      <div class="row"><span class="label">Ввод</span><span class="value">${escapeHtml(raw)}</span></div>
+      <div class="row"><span class="label">Международный</span><span class="value">${escapeHtml(fmtIntl)}</span></div>
+      <div class="row"><span class="label">Национальный</span><span class="value">${escapeHtml(fmtNat)}</span></div>
+      <div class="row"><span class="label">Страна</span><span class="value">${escapeHtml(country)}</span></div>
+      <div class="row"><span class="label">Код страны</span><span class="value">+${escapeHtml(callingCode)}</span></div>
+      <div class="row"><span class="label">E.164</span><span class="value">${escapeHtml(phone.number)}</span></div>
+      <div class="row"><span class="label">Оператор (DEF)</span>${operatorHtml}</div>
+      <div class="row"><span class="label">Регион (DEF)</span>${regionHtml}</div>
+      <div class="row"><span class="label">Возможен</span>${possible ? yes() : no()}</div>
+      <div class="row"><span class="label">Валиден</span>${valid ? yes() : no()}</div>
+      <div class="row"><span class="label">Тип линии</span><span class="value">${escapeHtml(phone.getType() || 'Не определён')}</span></div>
+    </div>`;
+    const rep = mountReport(r, { phoneHtml, smtpHint: 'Email не проверялся — используйте вкладку «Почта»' });
+
+    r.querySelectorAll('.row .value').forEach(el => {
+      const txt = el.textContent.trim();
+      if (txt && txt !== '—' && txt !== 'Да' && txt !== 'Нет' && txt !== 'Возможно') makeCopyable(el, txt);
+    });
+
+    const termText = `Проверка номера телефона\nВвод: ${raw}\nМеждународный формат: ${fmtIntl}\nНациональный формат: ${fmtNat}\nСтрана: ${country}\nКод страны: +${callingCode}\nE.164: ${phone.number}\nОператор (DEF): ${defInfo ? defInfo.operator : '—'}\nРегион (DEF): ${defInfo ? defInfo.region : '—'}\nВозможен: ${possible ? 'Да' : 'Нет'}\nВалиден: ${valid ? 'Да' : 'Нет'}\nТип линии: ${phone.getType() || 'Не определён'}\n\nПримечание: проверка формата не устанавливает владельца номера и не подтверждает личность. Регион по DEF-коду приблизителен.\n`;
+    lastPhoneReport = termText;
+    document.getElementById('phoneActions').style.display = 'flex';
+
+    updateTerminal(termText);
+    updateGraph(
+      [{ id: 'phone', label: raw, color: '#3b82f6' }, { id: 'country', label: country, color: '#22c55e' }],
+      [{ from: 'phone', to: 'country' }]
+    );
+
+    currentData = { target: raw, type: 'phone', number: phone.number, country,
+      valid: valid ? 'Да' : 'Нет', type: phone.getType() || 'Не определён',
+      operator: defInfo ? defInfo.operator : '—', region: defInfo ? defInfo.region : '—' };
+    currentType = 'phone';
+    document.getElementById('exportWrapper').classList.add('show');
+    pushHistory('phone', raw);
+    launchExternal(rep, [{ type: 'phone', value: phone.number, local: phone.number.replace(/\D/g, '') }], token);
+  } catch (e) {
+    r.innerHTML = `<div class="status invalid">${svgX} Не удалось распарсить: ${escapeHtml(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+/* ================= ЭКСПОРТ ================= */
+function exportTXT() {
+  if (!currentData) return;
+  let text = `=== OSINT REPORT ===\nType: ${currentType}\nTarget: ${currentData.target || '—'}\nDate: ${new Date().toLocaleString()}\n\n`;
+  if (currentType === 'domain') text += `Domain: ${currentData.domain}\nRegistrar: ${currentData.registrar}\nCreated: ${currentData.created}\nExpires: ${currentData.expires}\nStatus: ${currentData.status}\nNS: ${currentData.ns.join(', ')}\nA: ${(currentData.aRecords || []).join(', ')}\n`;
+  else if (currentType === 'ip') text += `IP: ${currentData.ip}\nNetwork: ${currentData.network}\nRange: ${currentData.range}\nCountry: ${currentData.country}\nOrg: ${currentData.org}\n`;
+  else if (currentType === 'email') text += `Email: ${currentData.email}\nDomain: ${currentData.domain}\nMX: ${currentData.mx.join(', ')}\nSPF: ${currentData.spf}\nDMARC: ${currentData.dmarc}\nDMARC policy: ${currentData.dmarcPolicy}\n`;
+  else if (currentType === 'phone') text += `Phone: ${currentData.number}\nCountry: ${currentData.country}\nOperator: ${currentData.operator}\nRegion: ${currentData.region}\nValid: ${currentData.valid}\nType: ${currentData.type}\n`;
+  if (currentData.findings && currentData.findings.length) text += '\nНайденные ресурсы:\n' + currentData.findings.map(f => `[${f.source}] ${f.site}: ${f.url}`).join('\n') + '\n';
+  downloadBlob(text, `osint_${currentType}_${Date.now()}.txt`, 'text/plain');
+}
+function exportHTML() {
+  if (!currentData) return;
+  let html = `<html><head><meta charset="utf-8"><title>OSINT Report</title><style>body{font-family:sans-serif;background:#000;color:#fff;padding:20px}.card{border:1px solid #333;padding:15px;margin-bottom:10px}</style></head><body>`;
+  html += `<h1>OSINT Report</h1><p>Type: ${currentType} | Target: ${escapeHtml(currentData.target || '—')} | Date: ${new Date().toLocaleString()}</p><div class="card">`;
+  if (currentType === 'domain') html += `<h2>Domain: ${escapeHtml(currentData.domain)}</h2><p>Registrar: ${escapeHtml(currentData.registrar)}</p><p>Created: ${escapeHtml(currentData.created)}</p><p>Expires: ${escapeHtml(currentData.expires)}</p><p>Status: ${escapeHtml(currentData.status)}</p><p>NS: ${escapeHtml(currentData.ns.join(', '))}</p><p>A: ${escapeHtml((currentData.aRecords || []).join(', '))}</p>`;
+  else if (currentType === 'ip') html += `<h2>IP: ${escapeHtml(currentData.ip)}</h2><p>Network: ${escapeHtml(currentData.network)}</p><p>Range: ${escapeHtml(currentData.range)}</p><p>Country: ${escapeHtml(currentData.country)}</p><p>Org: ${escapeHtml(currentData.org)}</p>`;
+  else if (currentType === 'email') html += `<h2>Email: ${escapeHtml(currentData.email)}</h2><p>Domain: ${escapeHtml(currentData.domain)}</p><p>MX: ${escapeHtml(currentData.mx.join(', '))}</p><p>SPF: ${escapeHtml(currentData.spf)}</p><p>DMARC: ${escapeHtml(currentData.dmarc)}</p>`;
+  else if (currentType === 'phone') html += `<h2>Phone: ${escapeHtml(currentData.number)}</h2><p>Country: ${escapeHtml(currentData.country)}</p><p>Operator: ${escapeHtml(currentData.operator)}</p><p>Region: ${escapeHtml(currentData.region)}</p><p>Valid: ${escapeHtml(currentData.valid)}</p><p>Type: ${escapeHtml(currentData.type)}</p>`;
+  if (currentData.findings && currentData.findings.length) html += `<h2>Найденные ресурсы</h2><ul>` + currentData.findings.map(f => { const h = normalizeUrl(f.url); return h ? `<li>[${escapeHtml(f.source)}] <a style="color:#60a5fa" href="${escapeHtml(h)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.site)} — ${escapeHtml(h)}</a></li>` : ''; }).join('') + `</ul>`;
+  html += `</div></body></html>`;
+  downloadBlob(html, `osint_${currentType}_${Date.now()}.html`, 'text/html');
+}
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type: type + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportPDF() {
+  const prev = document.title;
+  const name = String((currentData && currentData.target) || currentType || 'report').replace(/[^\w.@+-]+/g, '_').slice(0, 60);
+  document.title = 'KeSai_' + name;
+  const restore = () => { document.title = prev; window.removeEventListener('afterprint', restore); };
+  window.addEventListener('afterprint', restore);
+  renderPrintHead();
+  window.print();
+}
+
+/* ================= ОТЧЁТЫ / ДОСЬЕ ================= */
+const reportDate = document.getElementById('reportDate');
+if (reportDate && !reportDate.value) reportDate.value = new Date().toISOString().slice(0, 10);
+const dossierDate = document.getElementById('dossierDate');
+if (dossierDate && !dossierDate.value) dossierDate.value = new Date().toISOString().slice(0, 10);
+
+function reportValue(id) { return document.getElementById(id).value.trim(); }
+function buildReport() {
+  const title = reportValue('reportTitle') || 'OSINT-отчёт';
+  const target = reportValue('reportTarget') || 'объект не указан';
+  const dateRaw = reportValue('reportDate');
+  const date = dateRaw ? new Date(dateRaw + 'T12:00:00').toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+  const goal = reportValue('reportGoal');
+  const findings = reportValue('reportFindings').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const sources = reportValue('reportSources').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const limits = reportValue('reportLimits');
+  const tone = document.getElementById('reportTone').value;
+  const concise = tone === 'brief';
+  const formal = tone === 'formal';
+  const lines = [title, 'Дата проверки: ' + date, 'Объект: ' + target, ''];
+  if (goal) lines.push(formal ? 'Цель исследования. ' + goal : 'Цель проверки: ' + goal, '');
+  lines.push('Результаты проверки', '');
+  if (findings.length) {
+    if (concise) lines.push(findings.map(x => '• ' + x).join('\n'));
+    else { lines.push(formal ? 'В ходе проверки были собраны следующие сведения:' : 'В ходе проверки удалось собрать следующие сведения:'); lines.push(findings.map((x, i) => (i + 1) + '. ' + x).join('\n')); }
+  } else lines.push('Результаты пока не внесены. Добавьте в форму проверенные факты, прежде чем использовать отчёт.');
+  lines.push('');
+  if (sources.length) lines.push('Источники', '', sources.map((x, i) => (i + 1) + '. ' + x).join('\n'), '');
+  else lines.push('Источники', '', 'Источники необходимо добавить отдельно. Без ссылок и указания происхождения данных выводы нельзя считать независимо проверенными.', '');
+  if (limits) lines.push('Ограничения проверки', '', limits, '');
+  else lines.push('Ограничения проверки', '', 'Отчёт основан только на сведениях, внесённых автором. Данные и выводы требуют самостоятельной проверки; отсутствие сведений не означает отсутствия самого факта.', '');
+  lines.push('', formal ? 'Заключение' : 'Итог', '');
+  if (findings.length) lines.push(concise ? 'Отчёт фиксирует перечисленные сведения на дату проверки. Перед использованием рекомендуется повторно проверить источники.' : 'На дату составления отчёта зафиксированы перечисленные выше сведения. Они описывают только то, что подтверждено указанными источниками, и сами по себе не доказывают связь между объектами или наличие умысла.');
+  else lines.push('Заключение можно сформулировать после добавления и проверки фактов.');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+document.getElementById('generateReportBtn').addEventListener('click', () => { document.getElementById('reportOutput').value = buildReport(); toast('Отчёт составлен'); });
+document.getElementById('copyReportBtn').addEventListener('click', async () => {
+  const out = document.getElementById('reportOutput'); if (!out.value.trim()) out.value = buildReport();
+  await copyText(out.value); toast('Скопировано');
+});
+document.getElementById('downloadReportBtn').addEventListener('click', () => {
+  const out = document.getElementById('reportOutput'); if (!out.value.trim()) out.value = buildReport();
+  downloadBlob(out.value, 'KeSai-osint-report.txt', 'text/plain');
+});
+
+function dossierValue(id) { return document.getElementById(id).value.trim(); }
+function buildDossier() {
+  const kind = dossierValue('dossierType');
+  const title = dossierValue('dossierTitle') || 'OSINT-досье';
+  const subject = dossierValue('dossierSubject') || 'объект не указан';
+  const dateRaw = dossierValue('dossierDate');
+  const date = dateRaw ? new Date(dateRaw + 'T12:00:00').toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+  const purpose = dossierValue('dossierPurpose');
+  const facts = dossierValue('dossierFacts').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const sources = dossierValue('dossierSources').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const gaps = dossierValue('dossierGaps');
+  const lines = [title.toUpperCase(), 'Тип: ' + ({ info: 'Информационное досье', operational: 'Оперативное досье', intel: 'Разведывательное досье' }[kind] || 'OSINT-досье'), 'Дата составления: ' + date, 'Объект / тема: ' + subject, ''];
+  if (purpose) lines.push('КОНТЕКСТ И ЦЕЛЬ', '', purpose, '');
+  if (kind === 'info') {
+    lines.push('1. КРАТКАЯ СПРАВКА', '', facts.length ? facts.slice(0, 3).join(' ') : 'Материалы для справки не предоставлены.', '', '2. СОБРАННЫЕ СВЕДЕНИЯ', '', facts.length ? facts.map((x, i) => (i + 1) + '. ' + x).join('\n') : 'Факты не добавлены.');
+  } else if (kind === 'operational') {
+    lines.push('1. ТЕКУЩАЯ КАРТИНА', '', facts.length ? facts.map((x, i) => (i + 1) + '. ' + x).join('\n') : 'Доступные сведения не внесены.', '', '2. ПРОВЕРЕННЫЕ ИНДИКАТОРЫ', '', facts.length ? 'Ниже перечислены предоставленные сведения. Их статус следует сверить с источниками:' : 'Индикаторы не указаны.', ...(facts.length ? [facts.map(x => '• ' + x).join('\n')] : []), '', '3. ДАЛЬНЕЙШАЯ ПРОВЕРКА', '', 'Сопоставить источники, уточнить даты и контекст, проверить независимое подтверждение. Не трактовать совпадения как доказательство связи без дополнительных оснований.');
+  } else {
+    lines.push('1. КЛЮЧЕВЫЕ СУЖДЕНИЯ', '', facts.length ? facts.map((x, i) => `${i + 1}. ${x}\n   Статус: требует оценки по указанным источникам; уверенность автоматически не присваивается.`).join('\n') : 'Достаточных сведений для формулирования суждений не предоставлено.', '', '2. ОЦЕНКА ДОКАЗАТЕЛЬНОСТИ', '', 'Уровень уверенности не установлен: необходимо оценить надёжность источников, актуальность данных и наличие независимого подтверждения.', '', '3. ПРОБЕЛЫ И АЛЬТЕРНАТИВЫ', '', gaps || 'Не указаны. Перед выводами следует проверить возможные альтернативные объяснения и недостающие данные.');
+  }
+  lines.push('', 'ИСТОЧНИКИ', '', sources.length ? sources.map((x, i) => (i + 1) + '. ' + x).join('\n') : 'Источники не указаны. Все сведения требуют проверки.', '', 'ОГРАНИЧЕНИЯ И ПРОБЕЛЫ', '', gaps || 'Отдельные ограничения не указаны. Досье составлено только по предоставленным материалам; отсутствующие сведения не означают, что факт отсутствует.', '', 'ПРИМЕЧАНИЕ', '', 'Этот документ систематизирует предоставленную информацию. Он не является независимой проверкой, а выводы не должны выходить за пределы подтверждаемых источниками фактов.');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+document.getElementById('generateDossierBtn').addEventListener('click', () => { document.getElementById('dossierOutput').value = buildDossier(); toast('Досье составлено'); });
+document.getElementById('copyDossierBtn').addEventListener('click', async () => {
+  const out = document.getElementById('dossierOutput'); if (!out.value.trim()) out.value = buildDossier();
+  await copyText(out.value); toast('Скопировано');
+});
+document.getElementById('downloadDossierBtn').addEventListener('click', () => {
+  const out = document.getElementById('dossierOutput'); if (!out.value.trim()) out.value = buildDossier();
+  downloadBlob(out.value, 'KeSai-osint-dossier.txt', 'text/plain');
+});
+
+/* ================= ХЕНДЛЕРЫ ================= */
+document.getElementById('domainBtn').onclick = doDomain;
+document.getElementById('domainInput').addEventListener('keypress', e => { if (e.key === 'Enter') doDomain(); });
+document.getElementById('ipBtn').onclick = doIP;
+document.getElementById('ipInput').addEventListener('keypress', e => { if (e.key === 'Enter') doIP(); });
+document.getElementById('emailBtn').onclick = doEmail;
+document.getElementById('emailInput').addEventListener('keypress', e => { if (e.key === 'Enter') doEmail(); });
+document.getElementById('phoneBtn').onclick = doPhone;
+document.getElementById('phoneInput').addEventListener('keypress', e => { if (e.key === 'Enter') doPhone(); });
+document.getElementById('copyPhoneBtn').onclick = async () => { if (!lastPhoneReport) return; await copyText(lastPhoneReport); toast('Скопировано'); };
+document.getElementById('downloadPhoneBtn').onclick = () => {
+  if (!lastPhoneReport) return;
+  downloadBlob(lastPhoneReport, 'KeSai-phone-check.txt', 'text/plain');
+};
+
+/* ================= ИНИЦИАЛИЗАЦИЯ ================= */
+['domain','ip','email','phone'].forEach(renderHistory);
+if (SHOW_SVC_SETTINGS) initSvcSettings();
+initThemeUI();
+applyTheme(false);
+</script>
+</body>
+</html>
